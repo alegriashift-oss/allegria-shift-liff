@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- スマホでの表示スケールを固定（ピンチズームで文字が大きくなるのを防ぐ） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#06C755">
+  <title>アレグリア シフト提出</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===========================================================
+       画面1: ローディング
+       LIFF 初期化 & メンバーチェック中に表示する
+  ============================================================ -->
+  <section id="screen-loading" class="screen active">
+    <p class="loading-logo">アレグリア</p>
+    <p class="loading-sub">シフト提出システム</p>
+    <div class="spinner" role="status" aria-label="読み込み中"></div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面2: 名前選択画面（初回のみ）
+       GASからメンバーリストを取得して店舗別に表示する
+  ============================================================ -->
+  <section id="screen-name-selector" class="screen">
+    <header class="screen-header">
+      <h1>お名前を選んでください</h1>
+      <p class="screen-subtitle">リストから自分の名前をタップしてください</p>
+    </header>
+    <div class="screen-body">
+      <!-- NameSelector.init() が動的に描画する -->
+      <div id="name-list-container">
+        <p class="loading-text">読み込み中…</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面3: 期間選択画面
+       提出可能な期間を表示し、タップで選択する
+  ============================================================ -->
+  <section id="screen-period-selector" class="screen">
+    <header class="screen-header">
+      <h1>シフトを提出する</h1>
+      <!-- AppState.displayName を表示 -->
+      <p class="screen-subtitle">こんにちは、<span id="member-display-name"></span>さん</p>
+    </header>
+    <div class="screen-body">
+      <!-- PeriodSelector.init() が動的に描画する -->
+      <div id="period-list-container">
+        <p class="loading-text">期間情報を読み込み中…</p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面4: カレンダー入力画面
+       期間内の全日付をカード形式で表示し、シフトを入力する
+  ============================================================ -->
+  <section id="screen-calendar" class="screen">
+    <header class="screen-header">
+      <h1>シフトを入力してください</h1>
+      <!-- Calendar.init() が設定する期間ラベル -->
+      <p class="screen-subtitle" id="calendar-period-label"></p>
+    </header>
+    <div class="screen-body">
+
+      <!-- 期限超過警告バナー（期限を過ぎているときだけ表示） -->
+      <div id="calendar-deadline-warning" class="warning-banner" style="display:none"></div>
+
+      <!-- 読み取り専用バッジ（過去期間を確認するときだけ表示） -->
+      <div id="calendar-view-only-badge" class="view-only-badge" style="display:none">
+        📋 過去のシフトを表示しています（編集不可）
+      </div>
+
+      <!-- ショートカットボタン -->
+      <div class="calendar-toolbar">
+        <button
+          class="btn-secondary btn-sm"
+          onclick="Calendar.setAllUnavailable()"
+          title="全日付を勤務不可に設定"
+        >すべて勤務不可</button>
+        <button
+          class="btn-secondary btn-sm"
+          id="btn-same-as-last-week"
+          onclick="Calendar.applySameAsLastWeek()"
+          title="前回の期間と同じ曜日のシフトを適用"
+        >先週と同じ</button>
+      </div>
+
+      <!-- Calendar.init() が日付カードを動的に描画する -->
+      <div id="calendar-cards-container">
+        <p class="loading-text">読み込み中…</p>
+      </div>
+
+      <!-- 確認画面へ進むボタン -->
+      <div class="mt-16">
+        <button
+          class="btn-primary"
+          id="btn-go-to-confirm"
+          onclick="Calendar.onGoToConfirm()"
+        >確認画面へ →</button>
+
+        <!-- 期間選択に戻る -->
+        <button
+          class="btn-secondary mt-12"
+          onclick="showScreen('period-selector'); PeriodSelector.init()"
+        >← 期間選択に戻る</button>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面5: 確認画面
+       入力内容を一覧表示して最終確認する
+  ============================================================ -->
+  <section id="screen-confirmation" class="screen">
+    <header class="screen-header">
+      <h1>提出内容の確認</h1>
+    </header>
+    <div class="screen-body">
+
+      <!-- 選択した期間 -->
+      <div class="confirm-period-info">
+        📅 <span id="confirm-period-label"></span>
+      </div>
+
+      <!-- 期限超過警告 -->
+      <div id="confirm-deadline-warning" class="warning-banner" style="display:none">
+        ⚠ 提出期限を過ぎていますが、このまま提出します。
+      </div>
+
+      <!-- シフト一覧（Confirmation.init() が描画） -->
+      <div id="confirm-shift-list" class="confirm-shift-list"></div>
+
+      <!-- アクションボタン -->
+      <div class="confirm-actions">
+        <button
+          class="btn-primary"
+          id="confirm-submit-btn"
+          onclick="Confirmation.onSubmit()"
+        >提出する ✓</button>
+        <button
+          class="btn-secondary"
+          onclick="Confirmation.onBack()"
+        >← 修正する</button>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面6: 完了画面
+  ============================================================ -->
+  <section id="screen-complete" class="screen">
+    <div class="complete-icon">✅</div>
+    <h1 class="complete-title">提出が完了しました</h1>
+    <p class="complete-body">
+      シフトを受け付けました。<br>
+      ご提出ありがとうございました。
+    </p>
+    <!-- liff.closeWindow() でLINEに戻る -->
+    <button class="btn-primary" style="max-width:280px" onclick="closeApp()">
+      LINEに戻る
+    </button>
+  </section>
+
+
+  <!-- ===========================================================
+       画面7: エラー画面（起動失敗など）
+  ============================================================ -->
+  <section id="screen-error" class="screen">
+    <div class="error-icon">⚠️</div>
+    <h2 class="error-title">エラーが発生しました</h2>
+    <p id="error-message"></p>
+    <!-- ページリロードで再試行 -->
+    <button class="btn-primary" style="max-width:280px" onclick="location.reload()">
+      再試行する
+    </button>
+  </section>
+
+
+  <!-- ===========================================================
+       モーダル: 名前確認（「あなたは○○さんですか？」）
+       NameSelector._onMemberTap() で .active を付与して表示
+  ============================================================ -->
+  <div id="modal-confirm-name" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <p class="modal-title">名前の確認</p>
+      <div class="modal-body">
+        <span class="modal-name" id="modal-member-name"></span>
+        さんですか？
+      </div>
+      <div class="modal-actions">
+        <button
+          class="btn-secondary"
+          onclick="NameSelector.onConfirmNo()"
+        >いいえ</button>
+        <button
+          class="btn-primary"
+          id="modal-yes-btn"
+          onclick="NameSelector.onConfirmYes()"
+        >はい</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===========================================================
+       トースト通知（showToast() で表示）
+  ============================================================ -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+
+  <!-- ===========================================================
+       スクリプト読み込み順序:
+         1. LIFF SDK（CDN）
+         2. config.js   ← CONFIG オブジェクト
+         3. api.js      ← API オブジェクト（CONFIG に依存）
+         4. name_selector.js ← NameSelector（API に依存）
+         5. calendar.js ← Calendar（API に依存）
+         6. main.js     ← AppState, showScreen, PeriodSelector,
+                          Confirmation, initApp（すべてに依存）
+  ============================================================ -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/name_selector.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/main.js"></script>
+
+</body>
+</html>

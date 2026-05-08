@@ -1,0 +1,582 @@
+/* ============================================================
+   アレグリア シフト管理ツール - スタイルシート
+   スマートフォン最適化・モバイルファースト設計
+   ============================================================ */
+
+/* -------- リセット & ベース --------------------------------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-primary    : #06C755;   /* LINEグリーン */
+  --color-primary-dk : #04a344;   /* プライマリ暗め（ホバー） */
+  --color-danger     : #e53e3e;   /* エラー・不可 */
+  --color-warning    : #dd6b20;   /* 警告・期限超過 */
+  --color-text       : #1a1a1a;
+  --color-text-sub   : #666;
+  --color-border     : #e2e8f0;
+  --color-bg         : #f5f7fa;
+  --color-card       : #ffffff;
+  --color-avail      : #06C755;   /* 勤務可能ボタン */
+  --color-unavail    : #e53e3e;   /* 勤務不可ボタン */
+
+  --radius-card : 14px;
+  --radius-btn  : 10px;
+  --shadow-card : 0 2px 8px rgba(0,0,0,0.08);
+
+  --font-base   : 16px;           /* iOS の自動ズームを防ぐため 16px 以上に */
+}
+
+html {
+  font-size: var(--font-base);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+               'Noto Sans JP', Meiryo, sans-serif;
+  background : var(--color-bg);
+  color      : var(--color-text);
+  line-height: 1.6;
+  min-height : 100vh;
+}
+
+/* -------- SPAスクリーン制御 --------------------------------- */
+.screen {
+  display   : none;
+  min-height: 100vh;
+  padding-bottom: 32px;
+}
+.screen.active {
+  display: block;
+}
+
+/* -------- 共通ヘッダー ------------------------------------- */
+.screen-header {
+  background   : var(--color-primary);
+  color        : #fff;
+  padding      : 20px 16px 16px;
+  text-align   : center;
+  position     : sticky;
+  top          : 0;
+  z-index      : 10;
+  box-shadow   : 0 2px 6px rgba(0,0,0,0.15);
+}
+.screen-header h1 {
+  font-size  : 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.screen-header .screen-subtitle {
+  font-size  : 0.85rem;
+  opacity    : 0.9;
+  margin-top : 4px;
+}
+
+/* -------- 画面本体 ----------------------------------------- */
+.screen-body {
+  max-width: 480px;
+  margin   : 0 auto;
+  padding  : 16px;
+}
+
+/* -------- ローディング画面 ---------------------------------- */
+#screen-loading {
+  display     : flex;
+  flex-direction : column;
+  align-items : center;
+  justify-content: center;
+  background  : var(--color-primary);
+  color       : #fff;
+}
+.loading-logo {
+  font-size  : 2rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.loading-sub {
+  font-size  : 0.9rem;
+  opacity    : 0.85;
+  margin-bottom: 32px;
+}
+.spinner {
+  width : 40px;
+  height: 40px;
+  border: 4px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* -------- テキストユーティリティ --------------------------- */
+.loading-text {
+  text-align: center;
+  color     : var(--color-text-sub);
+  padding   : 24px 0;
+  font-size : 0.9rem;
+}
+.error-text {
+  text-align: center;
+  color     : var(--color-danger);
+  padding   : 24px 0;
+  font-size : 0.9rem;
+  line-height: 1.7;
+}
+.info-text {
+  text-align: center;
+  color     : var(--color-text-sub);
+  padding   : 24px 0;
+  font-size : 0.9rem;
+}
+
+/* -------- ボタン ------------------------------------------- */
+.btn-primary, .btn-secondary, .btn-danger {
+  display     : block;
+  width       : 100%;
+  padding     : 14px 16px;
+  border      : none;
+  border-radius: var(--radius-btn);
+  font-size   : 1rem;
+  font-weight : 600;
+  cursor      : pointer;
+  text-align  : center;
+  transition  : background 0.15s, transform 0.1s;
+  letter-spacing: 0.03em;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-primary {
+  background: var(--color-primary);
+  color     : #fff;
+}
+.btn-primary:hover  { background: var(--color-primary-dk); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-secondary {
+  background: #fff;
+  color     : var(--color-primary);
+  border    : 2px solid var(--color-primary);
+}
+.btn-secondary:hover  { background: #f0fdf4; }
+.btn-secondary:active { transform: scale(0.97); }
+
+.btn-danger {
+  background: var(--color-danger);
+  color     : #fff;
+}
+.btn-danger:active { transform: scale(0.97); }
+
+.btn-sm {
+  padding  : 10px 14px;
+  font-size: 0.9rem;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor : not-allowed;
+  transform: none !important;
+}
+
+/* -------- 警告バナー --------------------------------------- */
+.warning-banner {
+  background   : #fff3cd;
+  color        : var(--color-warning);
+  border       : 1px solid #ffc107;
+  border-radius: 8px;
+  padding      : 10px 14px;
+  font-size    : 0.85rem;
+  margin-bottom: 12px;
+  line-height  : 1.5;
+}
+
+/* -------- 名前選択画面 ------------------------------------- */
+.store-section {
+  margin-bottom: 24px;
+}
+.store-heading {
+  font-size    : 0.85rem;
+  font-weight  : 700;
+  color        : var(--color-text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 2px solid var(--color-primary);
+  padding-bottom: 6px;
+  margin-bottom : 10px;
+}
+.member-list {
+  list-style: none;
+  display   : flex;
+  flex-direction: column;
+  gap       : 8px;
+}
+.member-btn {
+  display     : block;
+  width       : 100%;
+  background  : var(--color-card);
+  color       : var(--color-text);
+  border      : 1px solid var(--color-border);
+  border-radius: var(--radius-btn);
+  padding     : 14px 16px;
+  font-size   : 1rem;
+  font-weight : 500;
+  text-align  : left;
+  cursor      : pointer;
+  box-shadow  : var(--shadow-card);
+  transition  : border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.member-btn:hover  { border-color: var(--color-primary); background: #f0fdf4; }
+.member-btn:active { background: #d1fae5; }
+
+/* -------- 期間選択画面 ------------------------------------- */
+.period-card {
+  background   : var(--color-card);
+  border       : 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding      : 16px;
+  margin-bottom: 12px;
+  box-shadow   : var(--shadow-card);
+}
+.period-card.over-deadline {
+  border-color: var(--color-warning);
+  background  : #fff8f0;
+}
+.period-card.past {
+  border-color: var(--color-border);
+  background  : #fafafa;
+  display     : flex;
+  align-items : center;
+  justify-content: space-between;
+  gap         : 12px;
+}
+.period-label {
+  font-size  : 1rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.period-card.past .period-label { margin-bottom: 0; font-size: 0.9rem; }
+.period-deadline {
+  font-size    : 0.82rem;
+  color        : var(--color-text-sub);
+  margin-bottom: 12px;
+  display      : flex;
+  align-items  : center;
+  gap          : 8px;
+}
+.deadline-badge {
+  background   : var(--color-warning);
+  color        : #fff;
+  font-size    : 0.7rem;
+  font-weight  : 700;
+  padding      : 2px 6px;
+  border-radius: 4px;
+}
+.past-section {
+  margin-top: 24px;
+}
+.section-heading {
+  font-size    : 0.85rem;
+  font-weight  : 700;
+  color        : var(--color-text-sub);
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: 6px;
+  margin-bottom : 10px;
+}
+
+/* -------- カレンダー入力画面 -------------------------------- */
+.calendar-toolbar {
+  display        : flex;
+  gap            : 8px;
+  margin-bottom  : 12px;
+}
+.calendar-toolbar button {
+  flex: 1;
+  font-size: 0.85rem;
+  padding  : 10px 8px;
+}
+
+.date-card {
+  background   : var(--color-card);
+  border       : 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding      : 14px 16px;
+  margin-bottom: 10px;
+  box-shadow   : var(--shadow-card);
+}
+.date-card-header {
+  margin-bottom: 10px;
+}
+.date-label {
+  font-size  : 1rem;
+  font-weight: 700;
+}
+
+/* 勤務可否トグル */
+.availability-toggle {
+  display      : flex;
+  border-radius: 8px;
+  overflow     : hidden;
+  border       : 1px solid var(--color-border);
+  margin-bottom: 10px;
+}
+.toggle-btn {
+  flex         : 1;
+  padding      : 11px 8px;
+  border       : none;
+  background   : #f5f5f5;
+  color        : var(--color-text-sub);
+  font-size    : 0.92rem;
+  font-weight  : 600;
+  cursor       : pointer;
+  transition   : background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.toggle-btn:first-child { border-right: 1px solid var(--color-border); }
+.toggle-btn.active.available {
+  background: var(--color-avail);
+  color     : #fff;
+}
+.toggle-btn.active.unavailable {
+  background: var(--color-unavail);
+  color     : #fff;
+}
+
+/* 時刻入力 */
+.time-inputs {
+  display       : flex;
+  flex-direction: column;
+  gap           : 8px;
+}
+.time-row {
+  display    : flex;
+  align-items: center;
+  gap        : 12px;
+}
+.time-label {
+  font-size  : 0.88rem;
+  font-weight: 600;
+  color      : var(--color-text-sub);
+  min-width  : 30px;
+}
+.time-select {
+  flex         : 1;
+  height       : 44px;            /* タップしやすいサイズ */
+  padding      : 0 12px;
+  border       : 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size    : 0.95rem;
+  background   : #fff;
+  color        : var(--color-text);
+  appearance   : none;
+  -webkit-appearance: none;
+  background-image   : url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat  : no-repeat;
+  background-position: right 10px center;
+  padding-right      : 36px;
+}
+.time-select.input-error {
+  border-color: var(--color-danger);
+  background-color: #fff5f5;
+}
+.time-error {
+  font-size: 0.8rem;
+  color    : var(--color-danger);
+  padding  : 2px 0;
+}
+
+/* 読み取り専用バッジ */
+.view-only-badge {
+  background   : #edf2f7;
+  color        : var(--color-text-sub);
+  text-align   : center;
+  padding      : 8px;
+  border-radius: 8px;
+  font-size    : 0.85rem;
+  margin-bottom: 12px;
+}
+
+/* -------- 確認画面 ----------------------------------------- */
+.confirm-period-info {
+  background   : #f0fdf4;
+  border       : 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding      : 12px 16px;
+  margin-bottom: 14px;
+  font-size    : 0.9rem;
+  font-weight  : 600;
+  color        : #166534;
+}
+
+.confirm-shift-list {
+  display       : flex;
+  flex-direction: column;
+  gap           : 6px;
+  margin-bottom : 20px;
+}
+.confirm-item {
+  display      : flex;
+  justify-content: space-between;
+  align-items  : center;
+  padding      : 10px 14px;
+  border-radius: 8px;
+  font-size    : 0.92rem;
+  border       : 1px solid var(--color-border);
+}
+.confirm-item.available {
+  background  : #f0fdf4;
+  border-color: #bbf7d0;
+}
+.confirm-item.unavailable {
+  background  : #fafafa;
+  color       : var(--color-text-sub);
+}
+.confirm-date  { font-weight: 600; }
+.confirm-time  { color: var(--color-primary); font-weight: 700; }
+.confirm-status{ font-size: 0.82rem; color: var(--color-text-sub); }
+
+.confirm-actions {
+  display       : flex;
+  flex-direction: column;
+  gap           : 10px;
+}
+
+/* -------- 完了画面 ----------------------------------------- */
+#screen-complete {
+  display    : flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align : center;
+  padding    : 40px 24px;
+  background : #fff;
+}
+.complete-icon {
+  font-size    : 4rem;
+  margin-bottom: 16px;
+}
+.complete-title {
+  font-size    : 1.4rem;
+  font-weight  : 700;
+  margin-bottom: 8px;
+  color        : var(--color-primary);
+}
+.complete-body {
+  font-size    : 0.9rem;
+  color        : var(--color-text-sub);
+  margin-bottom: 32px;
+  line-height  : 1.8;
+}
+
+/* -------- エラー画面 --------------------------------------- */
+#screen-error {
+  display    : flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align : center;
+  padding    : 40px 24px;
+}
+.error-icon  { font-size: 3rem; margin-bottom: 16px; }
+.error-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }
+#error-message {
+  font-size    : 0.88rem;
+  color        : var(--color-text-sub);
+  white-space  : pre-line;
+  margin-bottom: 24px;
+  line-height  : 1.7;
+}
+
+/* -------- モーダル ----------------------------------------- */
+.modal-overlay {
+  display   : none;
+  position  : fixed;
+  inset     : 0;
+  background: rgba(0,0,0,0.5);
+  z-index   : 100;
+  align-items: center;
+  justify-content: center;
+  padding   : 16px;
+}
+.modal-overlay.active {
+  display: flex;
+}
+.modal-box {
+  background   : var(--color-card);
+  border-radius: 16px;
+  padding      : 24px 20px;
+  max-width    : 340px;
+  width        : 100%;
+  box-shadow   : 0 8px 32px rgba(0,0,0,0.2);
+}
+.modal-title {
+  font-size    : 1rem;
+  font-weight  : 700;
+  text-align   : center;
+  margin-bottom: 8px;
+}
+.modal-body {
+  text-align   : center;
+  font-size    : 0.9rem;
+  color        : var(--color-text-sub);
+  margin-bottom: 20px;
+  line-height  : 1.7;
+}
+.modal-name {
+  display      : block;
+  font-size    : 1.1rem;
+  font-weight  : 700;
+  color        : var(--color-text);
+  margin-bottom: 4px;
+}
+.modal-actions {
+  display: flex;
+  gap    : 10px;
+}
+.modal-actions .btn-primary,
+.modal-actions .btn-secondary {
+  flex: 1;
+}
+
+/* -------- トースト通知 ------------------------------------- */
+#toast {
+  position     : fixed;
+  bottom       : 24px;
+  left         : 50%;
+  transform    : translateX(-50%) translateY(80px);
+  background   : rgba(30,30,30,0.9);
+  color        : #fff;
+  padding      : 12px 20px;
+  border-radius: 24px;
+  font-size    : 0.85rem;
+  white-space  : nowrap;
+  z-index      : 200;
+  transition   : transform 0.3s ease, opacity 0.3s ease;
+  opacity      : 0;
+  pointer-events: none;
+  max-width    : calc(100vw - 32px);
+  white-space  : normal;
+  text-align   : center;
+}
+#toast.visible {
+  transform: translateX(-50%) translateY(0);
+  opacity  : 1;
+}
+
+/* -------- セクション間スペース ----------------------------- */
+.mt-8  { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+
+/* -------- レスポンシブ（デスクトップで中央寄せ） ----------- */
+@media (min-width: 520px) {
+  .screen-body {
+    max-width: 480px;
+  }
+  .modal-overlay {
+    padding: 24px;
+  }
+}
