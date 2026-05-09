@@ -382,8 +382,8 @@ async function initApp() {
 
     if (memberResult.registered) {
       // 登録済み → 期間選択画面へ
-      AppState.displayName = memberResult.displayName;
-      AppState.store = memberResult.store;
+      AppState.displayName = memberResult.member.name;
+      AppState.store = memberResult.member.store;
 
       showScreen('period-selector');
       PeriodSelector.init();
@@ -404,4 +404,10 @@ async function initApp() {
 }
 
 // DOMの読み込み完了後にアプリを起動
-document.addEventListener('DOMContentLoaded', initApp);
+document.addEventListener('DOMContentLoaded', () => {
+  // 起動直後は screen-loading のみ表示（HTMLにactiveが残っていても上書き）
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  const loadingScreen = document.getElementById('screen-loading');
+  if (loadingScreen) loadingScreen.classList.add('active');
+  initApp();
+});

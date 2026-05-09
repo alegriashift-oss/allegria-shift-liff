@@ -10,7 +10,8 @@ const NameSelector = {
   // 確認モーダルで選択中のメンバー情報を一時保持
   _pendingMember: null,
 
-  // GASから取得したメンバーリスト（インデックス参照用）
+  // GASのstores配列をフラット化したリスト（インデックス参照用）
+  // 各要素: { name, storeId, storeName }
   _members: [],
 
   /**
@@ -28,8 +29,18 @@ const NameSelector = {
         throw new Error(result.error || 'メンバーリストの取得に失敗しました');
       }
 
-      this._members = result.members || [];
-      this._renderMemberList(this._members);
+      const stores = result.stores || [];
+
+      // stores → フラット配列（インデックス参照用）。renderと同じ順序で構築する
+      this._members = stores.flatMap(store =>
+        (store.members || []).map(m => ({
+          name:      m.name,
+          storeId:   store.id,
+          storeName: store.name
+        }))
+      );
+
+      this._renderStores(stores);
 
     } catch (err) {
       container.innerHTML = `
@@ -41,46 +52,36 @@ const NameSelector = {
   },
 
   /**
-   * メンバーリストを店舗別セクションとして描画
-   * @param {Array<{displayName:string, store:string}>} members
+   * 店舗別にメンバーリストを描画
+   * GASがすでに店舗ごとにグループ化して返すので、そのまま順番に出力する
+   * @param {Array<{id:string, name:string, members:Array<{name:string}>}>} stores
    */
-  _renderMemberList(members) {
+  _renderStores(stores) {
     const container = document.getElementById('name-list-container');
-
-    // 店舗ごとにグループ化
-    const grouped = {};
-    Object.keys(CONFIG.STORE_LABELS).forEach(storeId => {
-      grouped[storeId] = [];
-    });
-
-    members.forEach((member, index) => {
-      if (grouped[member.store]) {
-        // 元のインデックスを保持してクリック時に参照できるようにする
-        grouped[member.store].push({ ...member, _index: index });
-      }
-    });
-
-    // 各店舗セクションのHTML生成
+    let globalIdx = 0;
     let html = '';
 
-    Object.entries(CONFIG.STORE_LABELS).forEach(([storeId, storeLabel]) => {
-      const storeMembers = grouped[storeId];
-      if (storeMembers.length === 0) return;
+    stores.forEach(store => {
+      const members = store.members || [];
+      if (members.length === 0) return;
 
       html += `
         <div class="store-section">
-          <h3 class="store-heading">${storeLabel}</h3>
+          <h3 class="store-heading">${this._escapeHtml(store.name)}</h3>
           <ul class="member-list">
-            ${storeMembers.map(m => `
-              <li class="member-item">
-                <button
-                  class="member-btn"
-                  onclick="NameSelector._onMemberTap(${m._index})"
-                >
-                  ${this._escapeHtml(m.displayName)}
-                </button>
-              </li>
-            `).join('')}
+            ${members.map(m => {
+              const idx = globalIdx++;
+              return `
+                <li class="member-item">
+                  <button
+                    class="member-btn"
+                    onclick="NameSelector._onMemberTap(${idx})"
+                  >
+                    ${this._escapeHtml(m.name)}
+                  </button>
+                </li>
+              `;
+            }).join('')}
           </ul>
         </div>
       `;
@@ -105,7 +106,7 @@ const NameSelector = {
     this._pendingMember = member;
 
     // モーダルの名前テキストを差し替えて表示
-    document.getElementById('modal-member-name').textContent = member.displayName;
+    document.getElementById('modal-member-name').textContent = member.name;
     document.getElementById('modal-confirm-name').classList.add('active');
   },
 
@@ -125,16 +126,16 @@ const NameSelector = {
     try {
       const result = await API.registerMember(
         AppState.userId,
-        this._pendingMember.displayName
+        this._pendingMember.name
       );
 
       if (!result.ok) {
         throw new Error(result.error || '登録に失敗しました');
       }
 
-      // アプリ全体の状態を更新
-      AppState.displayName = this._pendingMember.displayName;
-      AppState.store       = this._pendingMember.store;
+      // GASが返す member オブジェクトからアプリ全体の状態を更新
+      AppState.displayName = result.member.name;
+      AppState.store       = result.member.store;
 
       // モーダルを閉じて期間選択画面へ
       modal.classList.remove('active');

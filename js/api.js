@@ -62,7 +62,7 @@ const API = {
    * LINE User ID がメンバーとして登録済みかチェック
    * GAS側: doGet({ action: 'check_member', userId })
    * @param {string} userId - LINE User ID
-   * @returns {Promise<{ok:boolean, registered:boolean, displayName?:string, store?:string}>}
+   * @returns {Promise<{ok:boolean, registered:boolean, member?:{name:string, store:string}}>}
    */
   checkMember(userId) {
     return this._get({ action: 'check_member', userId });
@@ -71,7 +71,7 @@ const API = {
   /**
    * 全メンバーリストを取得（初回名前選択に使用）
    * GAS側: doGet({ action: 'get_member_list' })
-   * @returns {Promise<{ok:boolean, members:Array<{displayName:string, store:string}>}>}
+   * @returns {Promise<{ok:boolean, stores:Array<{id:string, name:string, members:Array<{name:string}>}>}>}
    */
   getMemberList() {
     return this._get({ action: 'get_member_list' });
@@ -102,7 +102,7 @@ const API = {
    * GAS側: doPost({ action: 'register_member', userId, displayName })
    * @param {string} userId
    * @param {string} displayName - 選択した本名
-   * @returns {Promise<{ok:boolean, error?:string}>}
+   * @returns {Promise<{ok:boolean, member?:{name:string, store:string}, error?:string}>}
    */
   registerMember(userId, displayName) {
     return this._post({ action: 'register_member', userId, displayName });
