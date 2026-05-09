@@ -21,10 +21,10 @@
  * 各モジュールはこのオブジェクトを参照・更新して連携する。
  */
 const AppState = {
-  userId      : null,   // LINE User ID（liff.getProfile() から取得）
-  displayName : null,   // メンバー本名（GASから取得）
-  store       : null,   // 所属店舗 ('jimbocho' | 'shibuya')
-  selectedPeriod : null // 現在選択中の期間オブジェクト
+  userId: null,   // LINE User ID（liff.getProfile() から取得）
+  displayName: null,   // メンバー本名（GASから取得）
+  store: null,   // 所属店舗 ('jimbocho' | 'shibuya')
+  selectedPeriod: null // 現在選択中の期間オブジェクト
 };
 
 // ============================================================
@@ -93,7 +93,7 @@ const PeriodSelector = {
     try {
       const result = await API.getPeriods();
 
-      if (!result.success) {
+      if (!result.ok) {
         throw new Error(result.error || '期間情報の取得に失敗しました');
       }
 
@@ -115,8 +115,8 @@ const PeriodSelector = {
    * @param {Array} periods
    */
   _renderPeriods(periods) {
-    const container   = document.getElementById('period-list-container');
-    const today       = new Date(); today.setHours(0, 0, 0, 0);
+    const container = document.getElementById('period-list-container');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
 
     const openPeriods = periods.filter(p => p.isOpen);
     const pastPeriods = periods.filter(p => !p.isOpen);
@@ -127,8 +127,8 @@ const PeriodSelector = {
       html += '<p class="info-text">現在、提出可能な期間はありません。</p>';
     } else {
       html += openPeriods.map((p, localIdx) => {
-        const globalIdx    = periods.indexOf(p);
-        const deadline     = new Date(p.deadline + 'T00:00:00');
+        const globalIdx = periods.indexOf(p);
+        const deadline = new Date(p.deadline + 'T00:00:00');
         const isOverDeadline = today > deadline;
 
         return `
@@ -155,8 +155,8 @@ const PeriodSelector = {
         <div class="past-section">
           <h3 class="section-heading">過去の提出を確認</h3>
           ${pastPeriods.slice(0, 3).map(p => {
-            const globalIdx = periods.indexOf(p);
-            return `
+        const globalIdx = periods.indexOf(p);
+        return `
               <div class="period-card past">
                 <div class="period-label">${p.label}</div>
                 <button
@@ -165,7 +165,7 @@ const PeriodSelector = {
                 >確認する</button>
               </div>
             `;
-          }).join('')}
+      }).join('')}
         </div>
       `;
     }
@@ -190,8 +190,8 @@ const PeriodSelector = {
 
     try {
       // 提出済みシフトがあれば初期値として渡す（再編集対応）
-      const result         = await API.getMyShifts(AppState.userId, period.id);
-      const existingShifts = (result.success && result.shifts) ? result.shifts : [];
+      const result = await API.getMyShifts(AppState.userId, period.id);
+      const existingShifts = (result.ok && result.shifts) ? result.shifts : [];
 
       Calendar.init(period, existingShifts);
 
@@ -218,7 +218,7 @@ const PeriodSelector = {
 
     try {
       const result = await API.getMyShifts(AppState.userId, period.id);
-      const shifts = (result.success && result.shifts) ? result.shifts : [];
+      const shifts = (result.ok && result.shifts) ? result.shifts : [];
 
       Calendar.init(period, shifts);
 
@@ -242,9 +242,9 @@ const PeriodSelector = {
 
 const Confirmation = {
 
-  currentPeriod  : null,
-  shifts         : null,
-  isOverDeadline : false,
+  currentPeriod: null,
+  shifts: null,
+  isOverDeadline: false,
 
   /**
    * 確認画面を初期化・描画
@@ -253,8 +253,8 @@ const Confirmation = {
    * @param {boolean} isOverDeadline - 期限超過かどうか
    */
   init(period, shifts, isOverDeadline) {
-    this.currentPeriod  = period;
-    this.shifts         = shifts;
+    this.currentPeriod = period;
+    this.shifts = shifts;
     this.isOverDeadline = isOverDeadline;
 
     document.getElementById('confirm-period-label').textContent = period.label;
@@ -297,10 +297,10 @@ const Confirmation = {
   /** 「修正する」ボタン → カレンダー画面に戻る */
   onBack() {
     // 確認画面から戻った場合は「確認画面へ」ボタンを再表示
-    const confirmBtn  = document.getElementById('btn-go-to-confirm');
-    const viewBadge   = document.getElementById('calendar-view-only-badge');
+    const confirmBtn = document.getElementById('btn-go-to-confirm');
+    const viewBadge = document.getElementById('calendar-view-only-badge');
     if (confirmBtn) confirmBtn.style.display = '';
-    if (viewBadge)  viewBadge.style.display  = 'none';
+    if (viewBadge) viewBadge.style.display = 'none';
 
     showScreen('calendar');
   },
@@ -308,7 +308,7 @@ const Confirmation = {
   /** 「提出する」ボタン */
   async onSubmit() {
     const submitBtn = document.getElementById('confirm-submit-btn');
-    submitBtn.disabled    = true;
+    submitBtn.disabled = true;
     submitBtn.textContent = '送信中…';
 
     try {
@@ -318,7 +318,7 @@ const Confirmation = {
         this.shifts
       );
 
-      if (!result.success) {
+      if (!result.ok) {
         throw new Error(result.error || '提出に失敗しました');
       }
 
@@ -327,7 +327,7 @@ const Confirmation = {
     } catch (err) {
       alert('提出に失敗しました。もう一度お試しください。\n' + err.message);
       console.error('[Confirmation] submitShift:', err);
-      submitBtn.disabled    = false;
+      submitBtn.disabled = false;
       submitBtn.textContent = '提出する';
     }
   }
@@ -370,20 +370,20 @@ async function initApp() {
     }
 
     // 3. LINEプロフィールを取得してUserIDを保存
-    const profile    = await liff.getProfile();
-    AppState.userId  = profile.userId;
+    const profile = await liff.getProfile();
+    AppState.userId = profile.userId;
 
     // 4. GASでメンバー登録済みかチェック
     const memberResult = await API.checkMember(AppState.userId);
 
-    if (!memberResult.success) {
+    if (!memberResult.ok) {
       throw new Error(memberResult.error || 'メンバー情報の確認に失敗しました');
     }
 
     if (memberResult.registered) {
       // 登録済み → 期間選択画面へ
       AppState.displayName = memberResult.displayName;
-      AppState.store       = memberResult.store;
+      AppState.store = memberResult.store;
 
       showScreen('period-selector');
       PeriodSelector.init();

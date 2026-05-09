@@ -24,7 +24,7 @@ const NameSelector = {
     try {
       const result = await API.getMemberList();
 
-      if (!result.success) {
+      if (!result.ok) {
         throw new Error(result.error || 'メンバーリストの取得に失敗しました');
       }
 
@@ -128,7 +128,7 @@ const NameSelector = {
         this._pendingMember.displayName
       );
 
-      if (!result.success) {
+      if (!result.ok) {
         throw new Error(result.error || '登録に失敗しました');
       }
 

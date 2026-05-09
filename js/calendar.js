@@ -254,7 +254,7 @@ const Calendar = {
     try {
       // 全期間を取得して「現在の期間の1つ前」を特定
       const periodsResult = await API.getPeriods();
-      if (!periodsResult.success || !periodsResult.periods) {
+      if (!periodsResult.ok || !periodsResult.periods) {
         throw new Error('期間情報の取得に失敗しました');
       }
 
@@ -269,7 +269,7 @@ const Calendar = {
       const prevPeriod     = allPeriods[currentIdx - 1];
       const shiftsResult   = await API.getMyShifts(AppState.userId, prevPeriod.id);
 
-      if (!shiftsResult.success || !shiftsResult.shifts || shiftsResult.shifts.length === 0) {
+      if (!shiftsResult.ok || !shiftsResult.shifts || shiftsResult.shifts.length === 0) {
         alert(`「${prevPeriod.label}」のシフトデータがありません。`);
         return;
       }

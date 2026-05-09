@@ -62,7 +62,7 @@ const API = {
    * LINE User ID がメンバーとして登録済みかチェック
    * GAS側: doGet({ action: 'check_member', userId })
    * @param {string} userId - LINE User ID
-   * @returns {Promise<{success:boolean, registered:boolean, displayName?:string, store?:string}>}
+   * @returns {Promise<{ok:boolean, registered:boolean, displayName?:string, store?:string}>}
    */
   checkMember(userId) {
     return this._get({ action: 'check_member', userId });
@@ -71,7 +71,7 @@ const API = {
   /**
    * 全メンバーリストを取得（初回名前選択に使用）
    * GAS側: doGet({ action: 'get_member_list' })
-   * @returns {Promise<{success:boolean, members:Array<{displayName:string, store:string}>}>}
+   * @returns {Promise<{ok:boolean, members:Array<{displayName:string, store:string}>}>}
    */
   getMemberList() {
     return this._get({ action: 'get_member_list' });
@@ -80,7 +80,7 @@ const API = {
   /**
    * 提出可能な期間リストを取得
    * GAS側: doGet({ action: 'get_periods' })
-   * @returns {Promise<{success:boolean, periods:Array<{id,label,start,end,deadline,isOpen}>}>}
+   * @returns {Promise<{ok:boolean, periods:Array<{id,label,start,end,deadline,isOpen}>}>}
    */
   getPeriods() {
     return this._get({ action: 'get_periods' });
@@ -91,7 +91,7 @@ const API = {
    * GAS側: doGet({ action: 'get_my_shifts', userId, period })
    * @param {string} userId
    * @param {string} period - 期間ID (例: "2026-05-latter")
-   * @returns {Promise<{success:boolean, shifts:Array<{date,available,start,end}>}>}
+   * @returns {Promise<{ok:boolean, shifts:Array<{date,available,start,end}>}>}
    */
   getMyShifts(userId, period) {
     return this._get({ action: 'get_my_shifts', userId, period });
@@ -102,7 +102,7 @@ const API = {
    * GAS側: doPost({ action: 'register_member', userId, displayName })
    * @param {string} userId
    * @param {string} displayName - 選択した本名
-   * @returns {Promise<{success:boolean, error?:string}>}
+   * @returns {Promise<{ok:boolean, error?:string}>}
    */
   registerMember(userId, displayName) {
     return this._post({ action: 'register_member', userId, displayName });
@@ -114,7 +114,7 @@ const API = {
    * @param {string} userId
    * @param {string} period - 期間ID
    * @param {Array<{date:string, available:boolean, start:string|null, end:string|null}>} shifts
-   * @returns {Promise<{success:boolean, error?:string}>}
+   * @returns {Promise<{ok:boolean, error?:string}>}
    */
   submitShift(userId, period, shifts) {
     return this._post({ action: 'submit_shift', userId, period, shifts });
