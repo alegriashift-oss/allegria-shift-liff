@@ -53,6 +53,12 @@ body {
 .screen.active {
   display: block;
 }
+/* flex レイアウトが必要な画面は active のときだけ flex にする */
+#screen-loading.active,
+#screen-complete.active,
+#screen-error.active {
+  display: flex;
+}
 
 /* -------- 共通ヘッダー ------------------------------------- */
 .screen-header {
@@ -85,7 +91,6 @@ body {
 
 /* -------- ローディング画面 ---------------------------------- */
 #screen-loading {
-  display     : flex;
   flex-direction : column;
   align-items : center;
   justify-content: center;
@@ -258,6 +263,11 @@ button:disabled {
   margin-bottom: 6px;
 }
 .period-card.past .period-label { margin-bottom: 0; font-size: 0.9rem; }
+.period-date-range {
+  font-size  : 0.75rem;
+  font-weight: 400;
+  color      : var(--color-text-sub);
+}
 .period-deadline {
   font-size    : 0.82rem;
   color        : var(--color-text-sub);
@@ -445,7 +455,6 @@ button:disabled {
 
 /* -------- 完了画面 ----------------------------------------- */
 #screen-complete {
-  display    : flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -472,7 +481,6 @@ button:disabled {
 
 /* -------- エラー画面 --------------------------------------- */
 #screen-error {
-  display    : flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;

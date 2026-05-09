@@ -156,9 +156,14 @@ const PeriodSelector = {
           <h3 class="section-heading">過去の提出を確認</h3>
           ${pastPeriods.slice(0, 3).map(p => {
         const globalIdx = periods.indexOf(p);
+        const fmt = d => { const [, m, day] = d.split('-'); return `${parseInt(m)}/${parseInt(day)}`; };
+        const dateRange = `${fmt(p.start)}〜${fmt(p.end)}`;
         return `
               <div class="period-card past">
-                <div class="period-label">${p.label}</div>
+                <div class="period-label">
+                  ${p.label}<br>
+                  <span class="period-date-range">${dateRange}</span>
+                </div>
                 <button
                   class="btn-secondary btn-sm"
                   onclick="PeriodSelector.onViewPast(${globalIdx})"
