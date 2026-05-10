@@ -225,14 +225,7 @@ const PeriodSelector = {
       const result = await API.getMyShifts(AppState.userId, period.id);
       const shifts = (result.ok && result.shifts) ? result.shifts : [];
 
-      Calendar.init(period, shifts);
-
-      // 過去期間は「確認画面へ」を非表示にして読み取り専用と明示
-      const confirmBtn = document.getElementById('btn-go-to-confirm');
-      if (confirmBtn) confirmBtn.style.display = 'none';
-
-      const viewBadge = document.getElementById('calendar-view-only-badge');
-      if (viewBadge) viewBadge.style.display = '';
+      Calendar.init(period, shifts, true);
 
     } catch (err) {
       alert('シフトの読み込みに失敗しました。\n' + err.message);

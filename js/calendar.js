@@ -35,10 +35,11 @@ const Calendar = {
 
   /**
    * カレンダー画面を初期化
-   * @param {Object} period          - 期間情報 {id, label, start, end, deadline}
-   * @param {Array}  existingShifts  - 提出済みシフト（再編集時のみ渡す）
+   * @param {Object}  period         - 期間情報 {id, label, start, end, deadline}
+   * @param {Array}   existingShifts - 提出済みシフト（再編集時のみ渡す）
+   * @param {boolean} viewOnly       - true=閲覧専用モード（過去期間の確認用）
    */
-  init(period, existingShifts = []) {
+  init(period, existingShifts = [], viewOnly = false) {
     this.currentPeriod = period;
     this.shifts = {};
 
@@ -59,6 +60,12 @@ const Calendar = {
 
     // 全日付のカードを描画
     this._renderCalendar(period);
+
+    // 閲覧専用モードのUI切り替え（毎回必ずリセットしてモードを確定させる）
+    const confirmBtn = document.getElementById('btn-go-to-confirm');
+    const viewBadge  = document.getElementById('calendar-view-only-badge');
+    if (confirmBtn) confirmBtn.style.display = viewOnly ? 'none' : '';
+    if (viewBadge)  viewBadge.style.display  = viewOnly ? ''     : 'none';
   },
 
   // ============================================================
