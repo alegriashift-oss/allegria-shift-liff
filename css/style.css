@@ -397,6 +397,96 @@ button:disabled {
   padding  : 2px 0;
 }
 
+/* ---- シフト種別選択（ランチ/ディナー 角丸ピル型ボタン） ----------- */
+.shift-type-section {
+  margin-top: 10px;
+}
+.shift-type-label {
+  font-size    : 0.73rem;
+  font-weight  : 700;
+  color        : var(--color-text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 7px;
+}
+.shift-type-buttons {
+  display: flex;
+  gap    : 8px;
+  margin-bottom: 6px;
+}
+/* ランチ/ディナーは「角丸ピル型」で availability-toggle とは別の見た目 */
+.shift-type-btn {
+  flex          : 1;
+  display       : flex;
+  flex-direction: column;
+  align-items   : center;
+  justify-content: center;
+  gap           : 3px;
+  padding       : 11px 8px;
+  border        : 2px solid var(--color-border);
+  border-radius : 999px;        /* フルピル形状 */
+  background    : #fafafa;
+  color         : var(--color-text-sub);
+  font-size     : 0.95rem;
+  font-weight   : 700;
+  cursor        : pointer;
+  transition    : border-color 0.15s, background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  line-height   : 1.2;
+}
+.shift-type-btn.active {
+  border-color: var(--color-primary);
+  background  : var(--color-primary);
+  color       : #fff;
+}
+.shift-type-btn:active { transform: scale(0.96); }
+.shift-time-hint {
+  font-size  : 0.7rem;
+  font-weight: 400;
+  opacity    : 0.72;
+  display    : block;
+}
+.shift-type-btn.active .shift-time-hint {
+  opacity: 0.88;
+}
+
+/* ---- ディナー詳細設定アコーディオン -------------------------------- */
+.dinner-detail {
+  margin-top   : 8px;
+  border       : 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow     : hidden;
+}
+.dinner-detail-toggle {
+  display    : block;
+  width      : 100%;
+  padding    : 10px 14px;
+  background : #f5f7fa;
+  border     : none;
+  font-size  : 0.85rem;
+  font-weight: 600;
+  color      : var(--color-text-sub);
+  cursor     : pointer;
+  text-align : left;
+  -webkit-tap-highlight-color: transparent;
+}
+.dinner-detail-toggle:active { background: #edf2f7; }
+.dinner-detail-body {
+  padding       : 10px 14px;
+  display       : flex;
+  flex-direction: column;
+  gap           : 8px;
+  background    : #fff;
+  border-top    : 1px solid var(--color-border);
+}
+
+/* ---- シフト種別未選択エラー ---------------------------------------- */
+.shift-type-error {
+  font-size: 0.8rem;
+  color    : var(--color-danger);
+  padding  : 2px 0 4px;
+}
+
 /* 読み取り専用バッジ */
 .view-only-badge {
   background   : #edf2f7;
