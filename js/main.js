@@ -83,7 +83,6 @@ const PeriodSelector = {
    * 期間選択画面を初期化・描画
    */
   async init() {
-    // ウェルカムメッセージのユーザー名を更新
     const nameEl = document.getElementById('member-display-name');
     if (nameEl) nameEl.textContent = AppState.displayName || '';
 
@@ -95,6 +94,11 @@ const PeriodSelector = {
 
       if (!result.ok) {
         throw new Error(result.error || '期間情報の取得に失敗しました');
+      }
+
+      if (result.locked) {
+        container.innerHTML = '<p class="info-text">現在は提出期間外です。<br>次の提出期間までお待ちください。</p>';
+        return;
       }
 
       this._periods = result.periods || [];
@@ -110,70 +114,38 @@ const PeriodSelector = {
   },
 
   /**
-   * 期間カードを描画
-   * 提出可能な期間（isOpen=true）と過去期間を分けて表示する
+   * 期間カードを描画（提出可能な1件のみ）
    * @param {Array} periods
    */
   _renderPeriods(periods) {
     const container = document.getElementById('period-list-container');
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
-    const openPeriods = periods.filter(p => p.isOpen);
-    const pastPeriods = periods.filter(p => !p.isOpen);
-
-    let html = '';
-
-    if (openPeriods.length === 0) {
-      html += '<p class="info-text">現在、提出可能な期間はありません。</p>';
-    } else {
-      html += openPeriods.map((p, localIdx) => {
-        const globalIdx = periods.indexOf(p);
-        const deadline = new Date(p.deadline + 'T00:00:00');
-        const isOverDeadline = today > deadline;
-
-        return `
-          <div class="period-card${isOverDeadline ? ' over-deadline' : ''}">
-            <div class="period-label">${p.label}</div>
-            <div class="period-deadline">
-              締切: ${p.deadline.replace(/-/g, '/')}
-              ${isOverDeadline ? '<span class="deadline-badge">期限超過</span>' : ''}
-            </div>
-            <button
-              class="btn-primary"
-              onclick="PeriodSelector.onSelect(${globalIdx})"
-            >
-              ${isOverDeadline ? '（遅れて）' : ''}シフトを提出する
-            </button>
-          </div>
-        `;
-      }).join('');
+    if (periods.length === 0) {
+      container.innerHTML = '<p class="info-text">現在、提出可能な期間はありません。</p>';
+      return;
     }
 
-    // 過去の提出確認セクション
-    if (pastPeriods.length > 0) {
-      html += `
-        <div class="past-section">
-          <h3 class="section-heading">過去の提出を確認</h3>
-          ${pastPeriods.slice(0, 3).map(p => {
-        const globalIdx = periods.indexOf(p);
-        const fmt = d => { const [, m, day] = d.split('-'); return `${parseInt(m)}/${parseInt(day)}`; };
-        const dateRange = `${fmt(p.start)}〜${fmt(p.end)}`;
-        return `
-              <div class="period-card past">
-                <div class="period-label">
-                  ${p.label}<br>
-                  <span class="period-date-range">${dateRange}</span>
-                </div>
-                <button
-                  class="btn-secondary btn-sm"
-                  onclick="PeriodSelector.onViewPast(${globalIdx})"
-                >確認する</button>
-              </div>
-            `;
-      }).join('')}
+    const html = periods.map((p, index) => {
+      const deadline = new Date(p.deadline + 'T00:00:00');
+      const isOverDeadline = today > deadline;
+
+      return `
+        <div class="period-card${isOverDeadline ? ' over-deadline' : ''}">
+          <div class="period-label">${p.label}</div>
+          <div class="period-deadline">
+            締切: ${p.deadline.replace(/-/g, '/')}
+            ${isOverDeadline ? '<span class="deadline-badge">期限超過</span>' : ''}
+          </div>
+          <button
+            class="btn-primary"
+            onclick="PeriodSelector.onSelect(${index})"
+          >
+            ${isOverDeadline ? '（遅れて）' : ''}シフトを提出する
+          </button>
         </div>
       `;
-    }
+    }).join('');
 
     container.innerHTML = html;
   },
@@ -207,31 +179,6 @@ const PeriodSelector = {
     }
   },
 
-  /**
-   * 過去の期間を読み取り専用で確認
-   * カレンダー画面を「閲覧モード」で開く（確認ボタンを非表示）
-   * @param {number} index
-   */
-  async onViewPast(index) {
-    const period = this._periods[index];
-    if (!period) return;
-
-    AppState.selectedPeriod = period;
-    showScreen('calendar');
-    document.getElementById('calendar-cards-container').innerHTML =
-      '<p class="loading-text">シフトを読み込み中…</p>';
-
-    try {
-      const result = await API.getMyShifts(AppState.userId, period.id);
-      const shifts = (result.ok && result.shifts) ? result.shifts : [];
-
-      Calendar.init(period, shifts, true);
-
-    } catch (err) {
-      alert('シフトの読み込みに失敗しました。\n' + err.message);
-      showScreen('period-selector');
-    }
-  }
 };
 
 // ============================================================
