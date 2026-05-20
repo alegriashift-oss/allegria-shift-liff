@@ -10,10 +10,10 @@
  */
 const API = {
 
-  _idToken: null,
+  _accessToken: null,
 
-  setIdToken(idToken) {
-    this._idToken = idToken;
+  setAccessToken(accessToken) {
+    this._accessToken = accessToken;
   },
 
   // ============================================================
@@ -61,10 +61,10 @@ const API = {
   },
 
   _withAuth(data) {
-    if (!this._idToken) {
+    if (!this._accessToken) {
       throw new Error('LINE認証情報が取得できませんでした');
     }
-    return Object.assign({}, data, { idToken: this._idToken });
+    return Object.assign({}, data, { accessToken: this._accessToken });
   },
 
   // ============================================================
