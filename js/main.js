@@ -316,7 +316,12 @@ async function initApp() {
 
     // 3. LINEプロフィールを取得してUserIDを保存
     const profile = await liff.getProfile();
+    const idToken = liff.getIDToken();
+    if (!idToken) {
+      throw new Error('LINE認証情報を取得できませんでした。LIFFのopenidスコープを確認してください。');
+    }
     AppState.userId = profile.userId;
+    API.setIdToken(idToken);
 
     // 4. GASでメンバー登録済みかチェック
     const memberResult = await API.checkMember(AppState.userId);

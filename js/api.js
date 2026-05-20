@@ -10,6 +10,12 @@
  */
 const API = {
 
+  _idToken: null,
+
+  setIdToken(idToken) {
+    this._idToken = idToken;
+  },
+
   // ============================================================
   // 内部ユーティリティ
   // ============================================================
@@ -54,6 +60,13 @@ const API = {
     return response.json();
   },
 
+  _withAuth(data) {
+    if (!this._idToken) {
+      throw new Error('LINE認証情報が取得できませんでした');
+    }
+    return Object.assign({}, data, { idToken: this._idToken });
+  },
+
   // ============================================================
   // 公開API
   // ============================================================
@@ -65,7 +78,7 @@ const API = {
    * @returns {Promise<{ok:boolean, registered:boolean, member?:{name:string, store:string}}>}
    */
   checkMember(userId) {
-    return this._get({ action: 'check_member', userId });
+    return this._post(this._withAuth({ action: 'check_member', userId }));
   },
 
   /**
@@ -94,7 +107,7 @@ const API = {
    * @returns {Promise<{ok:boolean, shifts:Array<{date,available,start,end}>}>}
    */
   getMyShifts(userId, period) {
-    return this._get({ action: 'get_my_shifts', userId, period });
+    return this._post(this._withAuth({ action: 'get_my_shifts', userId, period }));
   },
 
   /**
@@ -105,7 +118,7 @@ const API = {
    * @returns {Promise<{ok:boolean, member?:{name:string, store:string}, error?:string}>}
    */
   registerMember(userId, displayName) {
-    return this._post({ action: 'register_member', userId, displayName });
+    return this._post(this._withAuth({ action: 'register_member', userId, displayName }));
   },
 
   /**
@@ -117,6 +130,6 @@ const API = {
    * @returns {Promise<{ok:boolean, error?:string}>}
    */
   submitShift(userId, period, shifts) {
-    return this._post({ action: 'submit_shift', userId, period, shifts });
+    return this._post(this._withAuth({ action: 'submit_shift', userId, period, shifts }));
   }
 };

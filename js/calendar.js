@@ -454,11 +454,18 @@ const Calendar = {
     var endDate = new Date(end   + 'T00:00:00');
 
     while (current <= endDate) {
-      dates.push(current.toISOString().split('T')[0]);
+      dates.push(this._formatLocalDate(current));
       current.setDate(current.getDate() + 1);
     }
 
     return dates;
+  },
+
+  _formatLocalDate(date) {
+    var year  = date.getFullYear();
+    var month = String(date.getMonth() + 1).padStart(2, '0');
+    var day   = String(date.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
   },
 
   formatDateLabel(date) {
