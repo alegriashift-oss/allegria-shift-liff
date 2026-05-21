@@ -83,11 +83,12 @@ const API = {
 
   /**
    * 全メンバーリストを取得（初回名前選択に使用）
-   * GAS側: doGet({ action: 'get_member_list' })
+   * GAS側: doPost({ action: 'get_member_list', userId, accessToken })
+   * @param {string} userId - LINE User ID
    * @returns {Promise<{ok:boolean, stores:Array<{id:string, name:string, members:Array<{name:string}>}>}>}
    */
-  getMemberList() {
-    return this._get({ action: 'get_member_list' });
+  getMemberList(userId) {
+    return this._post(this._withAuth({ action: 'get_member_list', userId }));
   },
 
   /**

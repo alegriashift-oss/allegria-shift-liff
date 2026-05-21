@@ -23,7 +23,7 @@ const NameSelector = {
     container.innerHTML = '<p class="loading-text">メンバーリストを読み込み中…</p>';
 
     try {
-      const result = await API.getMemberList();
+      const result = await API.getMemberList(AppState.userId);
 
       if (!result.ok) {
         throw new Error(result.error || 'メンバーリストの取得に失敗しました');
