@@ -283,16 +283,20 @@ const Confirmation = {
 // ============================================================
 
 /**
- * 「LINEに戻る」ボタン
- * LIFF の closeWindow() を呼んでアプリを閉じる
+ * 「このページを閉じる」ボタン
+ * LIFFのcloseWindowを優先し、通常ブラウザではwindow.closeを試す
  */
 function closeApp() {
-  if (liff.isInClient()) {
-    liff.closeWindow();
-  } else {
-    // ブラウザで開いている場合（開発中など）
-    alert('LINEアプリ内で開いてください。');
+  try {
+    if (window.liff && typeof liff.closeWindow === 'function') {
+      liff.closeWindow();
+      return;
+    }
+  } catch (err) {
+    console.warn('[closeApp] liff.closeWindow failed:', err);
   }
+
+  window.close();
 }
 
 // ============================================================
