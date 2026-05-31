@@ -111,6 +111,26 @@ const API = {
     return this._post(this._withAuth({ action: 'get_my_shifts', userId, period }));
   },
 
+  getMyHistory(userId) {
+    return this._post(this._withAuth({ action: 'get_my_history', userId }));
+  },
+
+  getMyHistoryDetail(userId, period) {
+    return this._post(this._withAuth({ action: 'get_my_history_detail', userId, period }));
+  },
+
+  getManagePeriods(userId) {
+    return this._post(this._withAuth({ action: 'get_manage_periods', userId }));
+  },
+
+  getManageOverview(userId, period, storeId) {
+    return this._post(this._withAuth({ action: 'get_manage_overview', userId, period, storeId }));
+  },
+
+  getManageDetail(userId, period, memberId) {
+    return this._post(this._withAuth({ action: 'get_manage_detail', userId, period, memberId }));
+  },
+
   /**
    * 名前選択時のメンバー紐付け登録
    * GAS側: doPost({ action: 'register_member', userId, displayName })

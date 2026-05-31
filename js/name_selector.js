@@ -136,13 +136,13 @@ const NameSelector = {
       // GASが返す member オブジェクトからアプリ全体の状態を更新
       AppState.displayName = result.member.name;
       AppState.store       = result.member.store;
+      AppState.role        = result.member.role || 'staff';
 
       // モーダルを閉じて期間選択画面へ
       modal.classList.remove('active');
       this._pendingMember = null;
 
-      showScreen('period-selector');
-      PeriodSelector.init();
+      Home.show();
 
     } catch (err) {
       alert('登録に失敗しました。もう一度お試しください。\n' + err.message);

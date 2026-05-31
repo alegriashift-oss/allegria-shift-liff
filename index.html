@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#06C755">
   <title>アレグリア シフト提出</title>
-  <link rel="stylesheet" href="css/style.css?v=20260531-next-period">
+  <link rel="stylesheet" href="css/style.css?v=20260531-submission-history">
 </head>
 <body>
 
@@ -40,7 +40,34 @@
 
 
   <!-- ===========================================================
-       画面3: 期間選択画面
+       画面3: ホーム画面
+  ============================================================ -->
+  <section id="screen-home" class="screen">
+    <header class="screen-header">
+      <h1>シフト管理</h1>
+      <p class="screen-subtitle">こんにちは、<span id="home-member-name"></span>さん</p>
+    </header>
+    <div class="screen-body">
+      <div class="home-actions">
+        <button class="home-action-btn" onclick="Home.openSubmit()">
+          <span class="home-action-title">シフトを提出する</span>
+          <span class="home-action-sub">受付中の期間へ入力します</span>
+        </button>
+        <button class="home-action-btn" onclick="Home.openHistory()">
+          <span class="home-action-title">自分の提出済みシフトを見る</span>
+          <span class="home-action-sub">提出後の内容を確認できます</span>
+        </button>
+        <button id="home-manage-btn" class="home-action-btn" style="display:none" onclick="Home.openManage()">
+          <span class="home-action-title">店舗の提出状況を見る</span>
+          <span class="home-action-sub">スタッフごとの提出内容を確認します</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面4: 期間選択画面
        提出可能な期間を表示し、タップで選択する
   ============================================================ -->
   <section id="screen-period-selector" class="screen">
@@ -54,17 +81,48 @@
       <div id="period-list-container">
         <p class="loading-text">期間情報を読み込み中…</p>
       </div>
+      <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
     </div>
   </section>
 
 
   <!-- ===========================================================
-       画面4: カレンダー入力画面
+       画面5: 本人の提出履歴
+  ============================================================ -->
+  <section id="screen-history" class="screen">
+    <header class="screen-header">
+      <h1>自分の提出済みシフト</h1>
+      <p class="screen-subtitle">確認する期間を選んでください</p>
+    </header>
+    <div class="screen-body">
+      <div id="history-period-list"></div>
+      <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面6: 管理者向け提出状況
+  ============================================================ -->
+  <section id="screen-manage" class="screen">
+    <header class="screen-header">
+      <h1>店舗の提出状況</h1>
+      <p class="screen-subtitle">スタッフごとの提出内容を確認できます</p>
+    </header>
+    <div class="screen-body">
+      <div id="manage-body"></div>
+      <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面7: カレンダー入力・閲覧画面
        期間内の全日付をカード形式で表示し、シフトを入力する
   ============================================================ -->
   <section id="screen-calendar" class="screen">
     <header class="screen-header">
-      <h1>シフトを入力してください</h1>
+      <h1 id="calendar-title">シフトを入力してください</h1>
       <!-- Calendar.init() が設定する期間ラベル -->
       <p class="screen-subtitle" id="calendar-period-label"></p>
     </header>
@@ -75,11 +133,11 @@
 
       <!-- 読み取り専用バッジ（過去期間を確認するときだけ表示） -->
       <div id="calendar-view-only-badge" class="view-only-badge" style="display:none">
-        📋 過去のシフトを表示しています（編集不可）
+        提出済みシフトを表示しています（編集不可）
       </div>
 
       <!-- ショートカットボタン -->
-      <div class="calendar-toolbar">
+      <div class="calendar-toolbar" id="calendar-toolbar">
         <button
           class="btn-secondary btn-sm"
           onclick="Calendar.setAllUnavailable()"
@@ -103,8 +161,8 @@
         <!-- 期間選択に戻る -->
         <button
           class="btn-secondary mt-12"
-          onclick="showScreen('period-selector'); PeriodSelector.init()"
-        >← 期間選択に戻る</button>
+          onclick="Calendar.onBack()"
+        >戻る</button>
       </div>
 
     </div>
@@ -164,6 +222,12 @@
     <!-- LIFFまたはブラウザの現在ページを閉じる -->
     <button class="btn-primary" style="max-width:280px" onclick="closeApp()">
       このページを閉じる
+    </button>
+    <button class="btn-secondary mt-12" style="max-width:280px" onclick="Home.openHistory()">
+      提出内容を確認する
+    </button>
+    <button class="btn-secondary mt-12" style="max-width:280px" onclick="Home.show()">
+      ホームへ戻る
     </button>
   </section>
 
@@ -225,11 +289,12 @@
                           Confirmation, initApp（すべてに依存）
   ============================================================ -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="js/config.js?v=20260531-next-period"></script>
-  <script src="js/api.js?v=20260531-next-period"></script>
-  <script src="js/name_selector.js?v=20260531-next-period"></script>
-  <script src="js/calendar.js?v=20260531-next-period"></script>
-  <script src="js/main.js?v=20260531-next-period"></script>
+  <script src="js/config.js?v=20260531-submission-history"></script>
+  <script src="js/api.js?v=20260531-submission-history"></script>
+  <script src="js/name_selector.js?v=20260531-submission-history"></script>
+  <script src="js/calendar.js?v=20260531-submission-history"></script>
+  <script src="js/history.js?v=20260531-submission-history"></script>
+  <script src="js/main.js?v=20260531-submission-history"></script>
 
 </body>
 </html>

@@ -138,6 +138,91 @@ body {
   font-size : 0.9rem;
 }
 
+/* -------- ホーム画面 --------------------------------------- */
+.home-actions {
+  display       : flex;
+  flex-direction: column;
+  gap           : 12px;
+}
+.home-action-btn {
+  width        : 100%;
+  background   : var(--color-card);
+  border       : 1px solid var(--color-border);
+  border-left  : 5px solid var(--color-primary);
+  border-radius: 8px;
+  padding      : 16px;
+  text-align   : left;
+  box-shadow   : var(--shadow-card);
+  cursor       : pointer;
+}
+.home-action-title {
+  display    : block;
+  color      : var(--color-text);
+  font-size  : 1rem;
+  font-weight: 700;
+}
+.home-action-sub {
+  display   : block;
+  color     : var(--color-text-sub);
+  font-size : 0.8rem;
+  margin-top: 3px;
+}
+
+/* -------- 履歴・管理画面 ----------------------------------- */
+.history-period-btn,
+.manage-member-btn {
+  display        : flex;
+  align-items    : center;
+  justify-content: space-between;
+  width          : 100%;
+  padding        : 14px 16px;
+  margin-bottom  : 8px;
+  background     : var(--color-card);
+  border         : 1px solid var(--color-border);
+  border-radius  : 8px;
+  color          : var(--color-text);
+  font-size      : 0.95rem;
+  font-weight    : 600;
+  text-align     : left;
+  box-shadow     : var(--shadow-card);
+  cursor         : pointer;
+}
+.history-arrow {
+  color    : var(--color-primary);
+  font-size: 1.5rem;
+}
+.field-label {
+  display      : block;
+  color        : var(--color-text-sub);
+  font-size    : 0.78rem;
+  font-weight  : 700;
+  margin-bottom: 4px;
+}
+.filter-select {
+  width        : 100%;
+  height       : 44px;
+  padding      : 0 12px;
+  margin-bottom: 12px;
+  border       : 1px solid var(--color-border);
+  border-radius: 8px;
+  background   : #fff;
+  color        : var(--color-text);
+  font-size    : 0.95rem;
+}
+.manage-summary {
+  color        : var(--color-text-sub);
+  font-size    : 0.88rem;
+  font-weight  : 700;
+  margin       : 6px 0 10px;
+}
+.status-submitted,
+.status-missing {
+  font-size  : 0.75rem;
+  font-weight: 700;
+}
+.status-submitted { color: var(--color-primary-dk); }
+.status-missing   { color: var(--color-danger); }
+
 /* -------- ボタン ------------------------------------------- */
 .btn-primary, .btn-secondary, .btn-danger {
   display     : block;
@@ -315,6 +400,11 @@ button:disabled {
   padding      : 14px 16px;
   margin-bottom: 10px;
   box-shadow   : var(--shadow-card);
+}
+.date-card.view-only button:disabled,
+.date-card.view-only select:disabled {
+  cursor : default;
+  opacity: 1;
 }
 .date-card-header {
   margin-bottom: 10px;

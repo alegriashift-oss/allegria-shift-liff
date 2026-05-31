@@ -19,6 +19,8 @@ const Calendar = {
 
   currentPeriod: null,
   shifts: {},
+  viewOnly: false,
+  backAction: null,
 
   // ランチ固定時間
   LUNCH_START: '10:30',
@@ -64,6 +66,7 @@ const Calendar = {
 
     this.currentPeriod = period;
     this.shifts = {};
+    this.viewOnly = viewOnly;
 
     // 提出済みシフトをGAS形式 → 内部モデルへ変換
     existingShifts.forEach(function(s) {
@@ -87,14 +90,22 @@ const Calendar = {
       }
     }, this);
 
+    document.getElementById('calendar-title').textContent =
+      viewOnly ? '提出済みシフト' : 'シフトを入力してください';
     document.getElementById('calendar-period-label').textContent = period.label;
-    this._checkDeadline(period.deadline);
+    if (viewOnly) {
+      document.getElementById('calendar-deadline-warning').style.display = 'none';
+    } else {
+      this._checkDeadline(period.deadline);
+    }
     this._renderCalendar(period);
 
     var confirmBtn = document.getElementById('btn-go-to-confirm');
     var viewBadge  = document.getElementById('calendar-view-only-badge');
+    var toolbar    = document.getElementById('calendar-toolbar');
     if (confirmBtn) confirmBtn.style.display = viewOnly ? 'none' : '';
     if (viewBadge)  viewBadge.style.display  = viewOnly ? ''     : 'none';
+    if (toolbar)    toolbar.style.display    = viewOnly ? 'none' : '';
   },
 
   // ============================================================
@@ -127,8 +138,9 @@ const Calendar = {
 
     var dinnerStartOpts = this._buildSelectOptions(this.DINNER_START_OPTIONS, shift.dinnerStart);
     var dinnerEndOpts   = this._buildSelectOptions(this.DINNER_END_OPTIONS,   shift.dinnerEnd);
+    var disabled = this.viewOnly ? ' disabled' : '';
 
-    return '<div class="date-card" data-date="' + date + '">' +
+    return '<div class="date-card' + (this.viewOnly ? ' view-only' : '') + '" data-date="' + date + '">' +
 
       '<div class="date-card-header">' +
         '<span class="date-label">' + dayLabel + '</span>' +
@@ -138,10 +150,10 @@ const Calendar = {
       '<div class="availability-toggle" role="group" aria-label="勤務可否">' +
         '<button class="toggle-btn ' + (isAvail ? 'active available' : '') + '" ' +
           'onclick="Calendar.onToggle(\'' + date + '\', true)" ' +
-          'aria-pressed="' + isAvail + '">勤務可能</button>' +
+          'aria-pressed="' + isAvail + '"' + disabled + '>勤務可能</button>' +
         '<button class="toggle-btn ' + (!isAvail ? 'active unavailable' : '') + '" ' +
           'onclick="Calendar.onToggle(\'' + date + '\', false)" ' +
-          'aria-pressed="' + !isAvail + '">勤務不可</button>' +
+          'aria-pressed="' + !isAvail + '"' + disabled + '>勤務不可</button>' +
       '</div>' +
 
       // シフト種別セクション（勤務可能時のみ表示）
@@ -151,13 +163,13 @@ const Calendar = {
         '<div class="shift-type-buttons">' +
           '<button class="shift-type-btn ' + (shift.lunch ? 'active' : '') + '" ' +
             'id="lunch-btn-' + date + '" ' +
-            'onclick="Calendar.onShiftTypeToggle(\'' + date + '\', \'lunch\')">' +
+            'onclick="Calendar.onShiftTypeToggle(\'' + date + '\', \'lunch\')"' + disabled + '>' +
             'ランチ' +
             '<span class="shift-time-hint">10:30〜15:00</span>' +
           '</button>' +
           '<button class="shift-type-btn ' + (shift.dinner ? 'active' : '') + '" ' +
             'id="dinner-btn-' + date + '" ' +
-            'onclick="Calendar.onShiftTypeToggle(\'' + date + '\', \'dinner\')">' +
+            'onclick="Calendar.onShiftTypeToggle(\'' + date + '\', \'dinner\')"' + disabled + '>' +
             'ディナー' +
             '<span class="shift-time-hint" id="dinner-hint-' + date + '">' + dinnerHint + '</span>' +
           '</button>' +
@@ -167,19 +179,19 @@ const Calendar = {
         '<div class="dinner-detail" id="dinner-detail-' + date + '" ' +
             (shift.dinner ? '' : 'style="display:none"') + '>' +
           '<button class="dinner-detail-toggle" ' +
-            'onclick="Calendar.toggleDinnerDetail(\'' + date + '\')">▼ 詳細設定</button>' +
+            'onclick="Calendar.toggleDinnerDetail(\'' + date + '\')"' + disabled + '>▼ 詳細設定</button>' +
           '<div class="dinner-detail-body" id="dinner-detail-body-' + date + '" style="display:none">' +
             '<div class="time-row">' +
               '<label class="time-label" for="dinner-start-' + date + '">開始</label>' +
               '<select class="time-select" id="dinner-start-' + date + '" ' +
-                'onchange="Calendar.onDinnerDetailChange(\'' + date + '\')">' +
+                'onchange="Calendar.onDinnerDetailChange(\'' + date + '\')"' + disabled + '>' +
                 dinnerStartOpts +
               '</select>' +
             '</div>' +
             '<div class="time-row">' +
               '<label class="time-label" for="dinner-end-' + date + '">終了</label>' +
               '<select class="time-select" id="dinner-end-' + date + '" ' +
-                'onchange="Calendar.onDinnerDetailChange(\'' + date + '\')">' +
+                'onchange="Calendar.onDinnerDetailChange(\'' + date + '\')"' + disabled + '>' +
                 dinnerEndOpts +
               '</select>' +
             '</div>' +
@@ -215,6 +227,7 @@ const Calendar = {
    * @param {boolean} available
    */
   onToggle(date, available) {
+    if (this.viewOnly) return;
     if (!this.shifts[date]) {
       this.shifts[date] = {
         available  : available,
@@ -258,6 +271,7 @@ const Calendar = {
    * @param {string} type - 'lunch' | 'dinner'
    */
   onShiftTypeToggle(date, type) {
+    if (this.viewOnly) return;
     if (!this.shifts[date]) {
       this.shifts[date] = {
         available  : true,
@@ -289,6 +303,7 @@ const Calendar = {
    * @param {string} date - YYYY-MM-DD
    */
   toggleDinnerDetail(date) {
+    if (this.viewOnly) return;
     var body = document.getElementById('dinner-detail-body-' + date);
     if (!body) return;
     var isOpen = body.style.display !== 'none';
@@ -303,6 +318,7 @@ const Calendar = {
    * @param {string} date - YYYY-MM-DD
    */
   onDinnerDetailChange(date) {
+    if (this.viewOnly) return;
     var startEl = document.getElementById('dinner-start-' + date);
     var endEl   = document.getElementById('dinner-end-'   + date);
     if (!startEl || !endEl) return;
@@ -324,6 +340,7 @@ const Calendar = {
   // ============================================================
 
   setAllUnavailable() {
+    if (this.viewOnly) return;
     document.querySelectorAll('.date-card').forEach(function(card) {
       this.onToggle(card.dataset.date, false);
     }, this);
@@ -335,6 +352,7 @@ const Calendar = {
   // ============================================================
 
   onGoToConfirm() {
+    if (this.viewOnly) return;
     var result = this._validateAndCollect();
 
     if (!result.valid) {
@@ -459,6 +477,15 @@ const Calendar = {
     }
 
     return dates;
+  },
+
+  onBack() {
+    if (typeof this.backAction === 'function') {
+      this.backAction();
+      return;
+    }
+    showScreen('period-selector');
+    PeriodSelector.init();
   },
 
   _formatLocalDate(date) {

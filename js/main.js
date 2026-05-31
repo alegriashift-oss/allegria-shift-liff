@@ -24,6 +24,7 @@ const AppState = {
   userId: null,   // LINE User ID（liff.getProfile() から取得）
   displayName: null,   // メンバー本名（GASから取得）
   store: null,   // 所属店舗 ('jimbocho' | 'shibuya')
+  role: 'staff',
   selectedPeriod: null // 現在選択中の期間オブジェクト
 };
 
@@ -171,6 +172,7 @@ const PeriodSelector = {
     if (!period) return;
 
     AppState.selectedPeriod = period;
+    Calendar.backAction = null;
 
     // カレンダー画面に切り替えてローディング状態を表示
     showScreen('calendar');
@@ -311,6 +313,34 @@ function closeApp() {
   window.close();
 }
 
+const Home = {
+  show() {
+    const nameEl = document.getElementById('home-member-name');
+    const manageBtn = document.getElementById('home-manage-btn');
+    if (nameEl) nameEl.textContent = AppState.displayName || '';
+    if (manageBtn) {
+      manageBtn.style.display =
+        AppState.role === 'manager' || AppState.role === 'admin' ? '' : 'none';
+    }
+    showScreen('home');
+  },
+
+  openSubmit() {
+    showScreen('period-selector');
+    PeriodSelector.init();
+  },
+
+  openHistory() {
+    showScreen('history');
+    HistoryViewer.init();
+  },
+
+  openManage() {
+    showScreen('manage');
+    ManagerViewer.init();
+  }
+};
+
 // ============================================================
 // エントリーポイント
 // ============================================================
@@ -350,9 +380,9 @@ async function initApp() {
       // 登録済み → 期間選択画面へ
       AppState.displayName = memberResult.member.name;
       AppState.store = memberResult.member.store;
+      AppState.role = memberResult.member.role || 'staff';
 
-      showScreen('period-selector');
-      PeriodSelector.init();
+      Home.show();
     } else {
       // 未登録 → 名前選択画面へ
       showScreen('name-selector');
