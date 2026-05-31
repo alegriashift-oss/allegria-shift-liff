@@ -94,7 +94,7 @@ const API = {
   /**
    * 提出可能な期間リストを取得
    * GAS側: doGet({ action: 'get_periods' })
-   * @returns {Promise<{ok:boolean, periods:Array<{id,label,start,end,deadline,isOpen}>}>}
+   * @returns {Promise<{ok:boolean, locked:boolean, periods:Array<{id,label,start,end,deadline,isOpen}>, nextPeriod?:{start:string,startLabel:string,targetLabel:string}}>}
    */
   getPeriods() {
     return this._get({ action: 'get_periods' });

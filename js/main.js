@@ -97,7 +97,19 @@ const PeriodSelector = {
       }
 
       if (result.locked) {
-        container.innerHTML = '<p class="info-text">現在は提出期間外です。<br>次の提出期間までお待ちください。</p>';
+        const nextPeriod = result.nextPeriod;
+        if (nextPeriod && nextPeriod.startLabel) {
+          container.innerHTML = `
+            <p class="info-text">
+              現在は提出期間外です。<br><br>
+              次の提出期間は<br>
+              <strong>${nextPeriod.startLabel}から</strong>です。<br>
+              ${nextPeriod.targetLabel ? `${nextPeriod.targetLabel}分のシフトを提出できます。` : ''}
+            </p>
+          `;
+        } else {
+          container.innerHTML = '<p class="info-text">現在は提出期間外です。<br>次の提出期間までお待ちください。</p>';
+        }
         return;
       }
 
