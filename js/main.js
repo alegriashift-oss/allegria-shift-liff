@@ -317,7 +317,11 @@ const Home = {
   show() {
     const nameEl = document.getElementById('home-member-name');
     const manageBtn = document.getElementById('home-manage-btn');
+    const submitBtn = document.getElementById('home-submit-btn');
     if (nameEl) nameEl.textContent = AppState.displayName || '';
+    if (submitBtn) {
+      submitBtn.style.display = AppState.store ? '' : 'none';
+    }
     if (manageBtn) {
       manageBtn.style.display =
         AppState.role === 'manager' || AppState.role === 'admin' ? '' : 'none';
@@ -326,6 +330,10 @@ const Home = {
   },
 
   openSubmit() {
+    if (!AppState.store) {
+      showToast('シフト提出先の店舗が設定されていません');
+      return;
+    }
     showScreen('period-selector');
     PeriodSelector.init();
   },
