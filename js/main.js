@@ -323,8 +323,7 @@ const Home = {
       submitBtn.style.display = AppState.store ? '' : 'none';
     }
     if (manageBtn) {
-      manageBtn.style.display =
-        AppState.role === 'manager' || AppState.role === 'admin' ? '' : 'none';
+      manageBtn.style.display = AppState.role === 'admin' ? '' : 'none';
     }
     showScreen('home');
   },
