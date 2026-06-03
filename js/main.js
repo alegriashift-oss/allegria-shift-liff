@@ -298,19 +298,51 @@ const Confirmation = {
 
 /**
  * 「このページを閉じる」ボタン
- * LIFFのcloseWindowを優先し、通常ブラウザではwindow.closeを試す
+ * LINEアプリ内のLIFFでは liff.closeWindow() で閉じる。
+ * 外部ブラウザでは仕様上閉じられないため、明確な案内を表示する。
  */
-function closeApp() {
+async function closeApp() {
+  var btn = document.getElementById('close-page-btn');
+  var help = document.getElementById('close-page-help');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '閉じています…';
+  }
+  if (help) help.style.display = 'none';
+
   try {
-    if (window.liff && typeof liff.closeWindow === 'function') {
+    if (window.liff && typeof liff.isInClient === 'function' && liff.isInClient()) {
       liff.closeWindow();
+      setTimeout(function() {
+        if (help) {
+          help.textContent = '閉じない場合は、画面右上の×で閉じてください。';
+          help.style.display = '';
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'このページを閉じる';
+        }
+      }, 1200);
       return;
     }
   } catch (err) {
     console.warn('[closeApp] liff.closeWindow failed:', err);
   }
 
-  window.close();
+  try {
+    window.close();
+  } catch (err) {
+    console.warn('[closeApp] window.close failed:', err);
+  }
+
+  if (help) {
+    help.textContent = 'LINEアプリ内で開くと、このボタンで閉じられます。外部ブラウザでは右上の×で閉じてください。';
+    help.style.display = '';
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'このページを閉じる';
+  }
 }
 
 const Home = {

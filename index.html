@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#06C755">
   <title>アレグリア シフト提出</title>
-  <link rel="stylesheet" href="css/style.css?v=20260531-submission-history">
+  <link rel="stylesheet" href="css/style.css?v=20260603-close-window">
 </head>
 <body>
 
@@ -220,9 +220,10 @@
       ご提出ありがとうございました。
     </p>
     <!-- LIFFまたはブラウザの現在ページを閉じる -->
-    <button class="btn-primary" style="max-width:280px" onclick="closeApp()">
+    <button id="close-page-btn" class="btn-primary" style="max-width:280px" onclick="closeApp()">
       このページを閉じる
     </button>
+    <p id="close-page-help" class="complete-help" style="display:none"></p>
     <button class="btn-secondary mt-12" style="max-width:280px" onclick="Home.openHistory()">
       提出内容を確認する
     </button>
@@ -294,7 +295,7 @@
   <script src="js/name_selector.js?v=20260531-submission-history"></script>
   <script src="js/calendar.js?v=20260531-submission-history"></script>
   <script src="js/history.js?v=20260531-submission-history"></script>
-  <script src="js/main.js?v=20260531-submission-history"></script>
+  <script src="js/main.js?v=20260603-close-window"></script>
 
 </body>
 </html>

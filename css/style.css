@@ -658,6 +658,13 @@ button:disabled {
   margin-bottom: 32px;
   line-height  : 1.8;
 }
+.complete-help {
+  width      : min(100%, 320px);
+  margin     : 10px auto 0;
+  font-size  : 0.88rem;
+  line-height: 1.6;
+  color      : var(--color-text-sub);
+}
 
 /* -------- エラー画面 --------------------------------------- */
 #screen-error {
