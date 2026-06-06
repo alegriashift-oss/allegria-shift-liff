@@ -11,6 +11,7 @@
 const API = {
 
   _accessToken: null,
+  REQUEST_TIMEOUT_MS: 45000,
 
   setAccessToken(accessToken) {
     this._accessToken = accessToken;
@@ -25,19 +26,50 @@ const API = {
    * @param {Object} params - URLクエリパラメータ { key: value, ... }
    * @returns {Promise<Object>} GASが返す JSON オブジェクト
    */
+  async _fetchJson(url, options, label) {
+    const timeoutMs = this.REQUEST_TIMEOUT_MS;
+    const canAbort = typeof AbortController !== 'undefined';
+    const controller = canAbort ? new AbortController() : null;
+    let timeoutId = null;
+
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        if (controller) controller.abort();
+        reject(new Error(label + ' がタイムアウトしました。通信環境を確認してもう一度お試しください'));
+      }, timeoutMs);
+    });
+
+    try {
+      const fetchOptions = controller
+        ? Object.assign({}, options, { signal: controller.signal })
+        : options;
+      const response = await Promise.race([
+        fetch(url, fetchOptions),
+        timeout
+      ]);
+
+      if (!response.ok) {
+        throw new Error(label + ' エラー: HTTP ' + response.status);
+      }
+      return response.json();
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        throw new Error(label + ' がタイムアウトしました。通信環境を確認してもう一度お試しください');
+      }
+      throw err;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  },
+
   async _get(params) {
     const url = new URL(CONFIG.GAS_URL);
     Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
 
-    const response = await fetch(url.toString(), {
+    return this._fetchJson(url.toString(), {
       method : 'GET',
       mode   : 'cors'
-    });
-
-    if (!response.ok) {
-      throw new Error(`GAS GET エラー: HTTP ${response.status}`);
-    }
-    return response.json();
+    }, 'GAS GET');
   },
 
   /**
@@ -47,17 +79,12 @@ const API = {
    * @returns {Promise<Object>} GASが返す JSON オブジェクト
    */
   async _post(data) {
-    const response = await fetch(CONFIG.GAS_URL, {
+    return this._fetchJson(CONFIG.GAS_URL, {
       method  : 'POST',
       mode    : 'cors',
       headers : { 'Content-Type': 'text/plain;charset=utf-8' },
       body    : JSON.stringify(data)
-    });
-
-    if (!response.ok) {
-      throw new Error(`GAS POST エラー: HTTP ${response.status}`);
-    }
-    return response.json();
+    }, 'GAS POST');
   },
 
   _withAuth(data) {

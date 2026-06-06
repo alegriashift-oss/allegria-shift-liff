@@ -204,6 +204,7 @@ const Confirmation = {
   currentPeriod: null,
   shifts: null,
   isOverDeadline: false,
+  isSubmitting: false,
 
   /**
    * 確認画面を初期化・描画
@@ -215,6 +216,7 @@ const Confirmation = {
     this.currentPeriod = period;
     this.shifts = shifts;
     this.isOverDeadline = isOverDeadline;
+    this.isSubmitting = false;
 
     document.getElementById('confirm-period-label').textContent = period.label;
 
@@ -223,6 +225,7 @@ const Confirmation = {
     if (warningEl) warningEl.style.display = isOverDeadline ? '' : 'none';
 
     this._renderShiftList(shifts);
+    this._setSubmitting(false);
   },
 
   /**
@@ -255,6 +258,11 @@ const Confirmation = {
 
   /** 「修正する」ボタン → カレンダー画面に戻る */
   onBack() {
+    if (this.isSubmitting) {
+      showToast('送信中です。少し待ってから操作してください');
+      return;
+    }
+
     // 確認画面から戻った場合は「確認画面へ」ボタンを再表示
     const confirmBtn = document.getElementById('btn-go-to-confirm');
     const viewBadge = document.getElementById('calendar-view-only-badge');
@@ -266,9 +274,8 @@ const Confirmation = {
 
   /** 「提出する」ボタン */
   async onSubmit() {
-    const submitBtn = document.getElementById('confirm-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = '送信中…';
+    if (this.isSubmitting) return;
+    this._setSubmitting(true);
 
     try {
       const result = await API.submitShift(
@@ -286,8 +293,22 @@ const Confirmation = {
     } catch (err) {
       alert('提出に失敗しました。もう一度お試しください。\n' + err.message);
       console.error('[Confirmation] submitShift:', err);
-      submitBtn.disabled = false;
-      submitBtn.textContent = '提出する';
+      this._setSubmitting(false);
+    }
+  },
+
+  _setSubmitting(isSubmitting) {
+    this.isSubmitting = isSubmitting;
+
+    const submitBtn = document.getElementById('confirm-submit-btn');
+    if (submitBtn) {
+      submitBtn.disabled = isSubmitting;
+      submitBtn.textContent = isSubmitting ? '送信中…' : '提出する ✓';
+    }
+
+    const backBtn = document.getElementById('confirm-back-btn');
+    if (backBtn) {
+      backBtn.disabled = isSubmitting;
     }
   }
 };
