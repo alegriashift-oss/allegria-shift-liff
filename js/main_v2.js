@@ -5,7 +5,7 @@
  * 画面遷移・UI・操作感はGAS版と同一を維持する。
  *
  * ロード順: config_v2.js → api_v2.js → name_selector_v2.js → calendar.js
- *           → history_v2.js → main_v2.js
+ *           → history_v2.js → manager_v2.js → main_v2.js
  * （calendar.js はGAS版をそのまま再利用。バックエンド依存がないため）
  */
 
@@ -332,8 +332,7 @@ const Home = {
       submitBtn.style.display = AppState.store ? '' : 'none';
     }
     if (manageBtn) {
-      // 管理者向け提出状況ビューはv2未移植のため常に非表示
-      manageBtn.style.display = 'none';
+      manageBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
     }
     showScreen('home');
   },
@@ -353,7 +352,8 @@ const Home = {
   },
 
   openManage() {
-    showToast('この機能は準備中です');
+    showScreen('manage');
+    ManagerViewer.init();
   }
 };
 

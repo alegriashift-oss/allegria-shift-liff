@@ -169,12 +169,20 @@ const SupaAPI = {
    * @returns {Promise<{submissionId:string|null, shifts:Array}>}
    */
   async getMyShifts(periodId) {
-    const uid = this.user.id;
+    return this.getShiftsOf(periodId, this.user.id);
+  },
 
+  /**
+   * 指定期間・指定ユーザーの提出をカレンダー用形式で取得。
+   * 他人のIDを渡せるのは店長のみ（RLS「店長は自店の提出を閲覧可」が効く。
+   * 権限がない場合は行が見えず submissionId:null が返るだけで漏えいしない）。
+   * @returns {Promise<{submissionId:string|null, shifts:Array}>}
+   */
+  async getShiftsOf(periodId, userId) {
     const sub = await this.db.from('submissions')
       .select('id')
       .eq('period_id', periodId)
-      .eq('user_id', uid)
+      .eq('user_id', userId)
       .maybeSingle();
     if (sub.error) throw new Error('提出データの取得に失敗しました: ' + sub.error.message);
     if (!sub.data) return { submissionId: null, shifts: [] };
@@ -287,5 +295,62 @@ const SupaAPI = {
       .map(s => ({ submission: s, period: byId[s.period_id] }))
       .filter(x => x.period)
       .sort((a, b) => (a.period.start_date < b.period.start_date ? 1 : -1));
+  },
+
+  // ============================================================
+  // 管理者向け（店舗の提出状況）
+  // ============================================================
+
+  /**
+   * 自分が店長権限を持つ店舗の期間一覧を新しい順で取得
+   * @param {Array<string>} storeIds - managedStoreIds()
+   */
+  async getManagePeriods(storeIds) {
+    if (!storeIds || !storeIds.length) return [];
+    const res = await this.db.from('shift_periods')
+      .select('id, store_id, title, start_date, end_date, deadline, status')
+      .in('store_id', storeIds)
+      .order('start_date', { ascending: false });
+    if (res.error) throw new Error('提出期間の取得に失敗しました: ' + res.error.message);
+    return res.data || [];
+  },
+
+  /**
+   * 指定期間の店舗メンバー一覧と提出有無を取得
+   * @param {Object} period - 期間VM（{id, storeId}を使用）
+   * @returns {Promise<Array<{id:string, name:string, submitted:boolean}>>}
+   */
+  async getManageOverview(period) {
+    const mem = await this.db.from('store_members')
+      .select('user_id, member_code')
+      .eq('store_id', period.storeId)
+      .eq('status', 'active');
+    if (mem.error) throw new Error('メンバー一覧の取得に失敗しました: ' + mem.error.message);
+    const members = mem.data || [];
+    if (!members.length) return [];
+
+    const prof = await this.db.from('profiles')
+      .select('id, display_name')
+      .in('id', members.map(m => m.user_id));
+    if (prof.error) throw new Error('メンバー名の取得に失敗しました: ' + prof.error.message);
+    const nameById = {};
+    (prof.data || []).forEach(p => { nameById[p.id] = p.display_name; });
+
+    const subs = await this.db.from('submissions')
+      .select('user_id')
+      .eq('period_id', period.id);
+    if (subs.error) throw new Error('提出状況の取得に失敗しました: ' + subs.error.message);
+    const submittedIds = new Set((subs.data || []).map(s => s.user_id));
+
+    return members
+      .map(m => ({
+        id        : m.user_id,
+        memberCode: m.member_code || '',
+        name      : nameById[m.user_id] || '（名前未登録）',
+        submitted : submittedIds.has(m.user_id)
+      }))
+      .sort((a, b) =>
+        a.memberCode.localeCompare(b.memberCode, 'ja', { numeric: true }) ||
+        a.name.localeCompare(b.name, 'ja'));
   }
 };

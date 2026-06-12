@@ -1,9 +1,7 @@
 /**
  * 提出履歴の本人閲覧（Supabase版 v2）。
  * 詳細表示は入力画面と同じ Calendar を読み取り専用で再利用する。
- *
- * 管理者向けの提出状況一覧（GAS版 ManagerViewer）はv2では未移植。
- * ホーム画面のボタンを表示しないことで導線を塞いでいる。
+ * 管理者向けの提出状況一覧は manager_v2.js（ManagerViewer）にある。
  */
 const HistoryViewer = {
   _entries: [],
