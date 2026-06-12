@@ -1,0 +1,417 @@
+/**
+ * アレグリア シフト管理ツール - 店長ツール（admin-v2.html 専用）
+ *
+ * 提出された希望を見ながら、日ごとにスタッフへシフトを割り当て（たたき台）、
+ * 確定（公開）するとスタッフのアプリに表示される。
+ *
+ * データの流れ:
+ *   submissions / submission_items（スタッフの希望・読み取りのみ）
+ *   → published_shifts（たたき台 status='draft' → 確定 status='published'）
+ *
+ * 権限はRLSが担保（店長以外はpublished_shiftsの編集も希望の閲覧もできない）。
+ * ロード順: config_v2.js → api_v2.js → admin_v2.js
+ */
+
+const AdminState = {
+  userId     : null,
+  displayName: null,
+  managed    : []   // 店長権限を持つ所属 [{store_id, store_name, role, ...}]
+};
+
+// ============================================================
+// 汎用ユーティリティ（このページ専用。submit-v2側とは独立）
+// ============================================================
+
+function showScreen(screenId) {
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  const target = document.getElementById('screen-' + screenId);
+  if (target) {
+    target.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    console.error('[showScreen] 存在しないスクリーン:', screenId);
+  }
+}
+
+function showToast(message, duration = 3000) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('visible');
+  setTimeout(() => toast.classList.remove('visible'), duration);
+}
+
+function showError(message) {
+  const el = document.getElementById('error-message');
+  if (el) el.textContent = message;
+  showScreen('error');
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/** DBの期間行 → このページで使うVM */
+function adminPeriodVM(p) {
+  const membership = AdminState.managed.find(m => m.store_id === p.store_id);
+  const storeName  = membership ? membership.store_name : '';
+  const multiStore = AdminState.managed.length > 1;
+  return {
+    id      : p.id,
+    storeId : p.store_id,
+    label   : (multiStore && storeName ? storeName + ' / ' : '') + p.title,
+    start   : String(p.start_date).slice(0, 10),
+    end     : String(p.end_date).slice(0, 10),
+    status  : p.status
+  };
+}
+
+// ============================================================
+// 期間選択画面
+// ============================================================
+
+const AdminPeriods = {
+  _periods: [],
+
+  async init() {
+    showScreen('period-list');
+    const container = document.getElementById('admin-period-list');
+    container.innerHTML = '<p class="loading-text">期間を読み込み中…</p>';
+    try {
+      const rows = await SupaAPI.getManagePeriods(AdminState.managed.map(m => m.store_id));
+      this._periods = rows.map(adminPeriodVM);
+      if (!this._periods.length) {
+        container.innerHTML = '<p class="info-text">表示できる期間はありません。</p>';
+        return;
+      }
+      container.innerHTML = this._periods.map((p, index) => `
+        <button class="history-period-btn" onclick="AdminPeriods.open(${index})">
+          <span>${escapeHtml(p.label)}<span class="period-status-badge ${p.status === 'open' ? 'open' : 'closed'}">${p.status === 'open' ? '提出受付中' : '締切済み'}</span></span>
+          <span class="history-arrow">›</span>
+        </button>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<p class="error-text">${escapeHtml(err.message)}</p>`;
+    }
+  },
+
+  open(index) {
+    const period = this._periods[index];
+    if (period) DraftEditor.init(period);
+  }
+};
+
+// ============================================================
+// たたき台編集画面
+// ============================================================
+
+const DraftEditor = {
+  period   : null,
+  dates    : [],     // 期間内の全日付 "YYYY-MM-DD"
+  dayIndex : 0,
+  members  : [],     // [{id, name, memberCode, submitted}]
+  hopes    : {},     // hopes[userId][date] = {available, start, end}
+  assign   : {},     // assign[userId][date] = {start, end, status}
+  hasPublished: false,
+
+  async init(period) {
+    this.period = period;
+    this.dates = this._datesBetween(period.start, period.end);
+    this.dayIndex = 0;
+
+    showScreen('editor');
+    document.getElementById('editor-period-label').textContent = period.label;
+    document.getElementById('editor-day-body').innerHTML =
+      '<p class="loading-text">読み込み中…</p>';
+
+    try {
+      const data = await SupaAPI.getDraftData(period);
+      this.members = data.members;
+      this.hopes = data.hopes;
+      this.assign = {};
+      this.hasPublished = false;
+      data.drafts.forEach(d => {
+        const date = String(d.work_date).slice(0, 10);
+        if (!this.assign[d.user_id]) this.assign[d.user_id] = {};
+        this.assign[d.user_id][date] = {
+          start : String(d.start_time).slice(0, 5),
+          end   : String(d.end_time).slice(0, 5),
+          status: d.status
+        };
+        if (d.status === 'published') this.hasPublished = true;
+      });
+      this._updatePublishBar();
+      this.renderDay();
+    } catch (err) {
+      showError(err.message);
+    }
+  },
+
+  // --------------------------------------------------------
+  // 描画
+  // --------------------------------------------------------
+
+  renderDay() {
+    const date = this.dates[this.dayIndex];
+
+    document.getElementById('editor-day-label').textContent = this._formatDateLabel(date);
+    document.getElementById('editor-day-pos').textContent =
+      (this.dayIndex + 1) + '日目 / 全' + this.dates.length + '日';
+    document.getElementById('editor-prev').disabled = this.dayIndex === 0;
+    document.getElementById('editor-next').disabled = this.dayIndex === this.dates.length - 1;
+
+    const count = this.members.filter(m => (this.assign[m.id] || {})[date]).length;
+    document.getElementById('editor-day-summary').textContent =
+      'この日の出勤: ' + count + '人';
+
+    document.getElementById('editor-day-body').innerHTML =
+      this.members.map((m, index) => {
+        const hope = (this.hopes[m.id] || {})[date];
+        const asg  = (this.assign[m.id] || {})[date];
+        const hopeLabel = !hope
+          ? '<span class="hope none">未提出</span>'
+          : hope.available
+            ? `<span class="hope ok">希望 ${hope.start}〜${hope.end}</span>`
+            : '<span class="hope ng">休み希望</span>';
+
+        return `
+          <div class="staff-row${asg ? ' on' : ''}">
+            <div class="staff-row-top">
+              <span class="staff-name">${escapeHtml(m.name)}</span>
+              ${hopeLabel}
+              <button class="assign-toggle${asg ? ' on' : ''}" onclick="DraftEditor.toggle(${index})">
+                ${asg ? '出勤' : '休み'}
+              </button>
+            </div>
+            ${asg ? `
+            <div class="staff-row-times">
+              <select onchange="DraftEditor.onTime(${index}, 'start', this.value)">
+                ${this._timeOptions(asg.start)}
+              </select>
+              <span>〜</span>
+              <select onchange="DraftEditor.onTime(${index}, 'end', this.value)">
+                ${this._timeOptions(asg.end)}
+              </select>
+            </div>` : ''}
+          </div>
+        `;
+      }).join('');
+  },
+
+  /** 10:00〜23:00、30分刻みの<option>群 */
+  _timeOptions(selected) {
+    const opts = [];
+    for (let h = 10; h <= 23; h++) {
+      ['00', '30'].forEach(mm => {
+        if (h === 23 && mm === '30') return;
+        const t = String(h).padStart(2, '0') + ':' + mm;
+        opts.push(`<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`);
+      });
+    }
+    return opts.join('');
+  },
+
+  prevDay() {
+    if (this.dayIndex > 0) { this.dayIndex--; this.renderDay(); }
+  },
+
+  nextDay() {
+    if (this.dayIndex < this.dates.length - 1) { this.dayIndex++; this.renderDay(); }
+  },
+
+  // --------------------------------------------------------
+  // 編集操作（変更は即保存）
+  // --------------------------------------------------------
+
+  /** 出勤⇔休みの切り替え */
+  async toggle(index) {
+    const m = this.members[index];
+    const date = this.dates[this.dayIndex];
+    const current = (this.assign[m.id] || {})[date];
+
+    try {
+      if (current) {
+        delete this.assign[m.id][date];
+        this.renderDay();
+        await SupaAPI.deleteDraftShift(this.period.id, m.id, date);
+      } else {
+        // 初期値は本人の希望時間。希望がなければディナー標準（17:00〜23:00）
+        const hope = (this.hopes[m.id] || {})[date];
+        const start = (hope && hope.available) ? hope.start : '17:00';
+        const end   = (hope && hope.available) ? hope.end   : '23:00';
+        if (!this.assign[m.id]) this.assign[m.id] = {};
+        this.assign[m.id][date] = { start: start, end: end, status: 'draft' };
+        this.renderDay();
+        await SupaAPI.saveDraftShift(this.period, m.id, date, start, end);
+      }
+    } catch (err) {
+      showToast('保存に失敗しました。読み込み直します');
+      console.error('[DraftEditor.toggle]', err);
+      this.init(this.period);
+    }
+  },
+
+  /** 時刻の変更 */
+  async onTime(index, which, value) {
+    const m = this.members[index];
+    const date = this.dates[this.dayIndex];
+    const asg = (this.assign[m.id] || {})[date];
+    if (!asg) return;
+
+    const before = asg[which];
+    asg[which] = value;
+    if (asg.start >= asg.end) {
+      asg[which] = before;
+      showToast('終了時刻は開始時刻より後にしてください');
+      this.renderDay();
+      return;
+    }
+
+    try {
+      await SupaAPI.saveDraftShift(this.period, m.id, date, asg.start, asg.end);
+    } catch (err) {
+      showToast('保存に失敗しました。読み込み直します');
+      console.error('[DraftEditor.onTime]', err);
+      this.init(this.period);
+    }
+  },
+
+  /** 提出された希望を、未割当のコマにまとめて取り込む */
+  async copyFromHopes() {
+    const rows = [];
+    this.members.forEach(m => {
+      const hopeDates = this.hopes[m.id] || {};
+      Object.keys(hopeDates).forEach(date => {
+        const hope = hopeDates[date];
+        if (!hope.available) return;
+        if ((this.assign[m.id] || {})[date]) return; // 既に割当済みは触らない
+        rows.push({ userId: m.id, date: date, start: hope.start, end: hope.end });
+      });
+    });
+
+    if (!rows.length) {
+      showToast('取り込める希望はありません（すべて割当済みです）');
+      return;
+    }
+    if (!confirm(rows.length + 'コマを希望どおりに割り当てます。\n（割当済みのコマは変更されません）\nよろしいですか？')) {
+      return;
+    }
+
+    try {
+      await SupaAPI.createDraftFromHopes(this.period, rows);
+      showToast(rows.length + 'コマを取り込みました');
+      await this.init(this.period);
+    } catch (err) {
+      showToast(err.message);
+      console.error('[DraftEditor.copyFromHopes]', err);
+    }
+  },
+
+  /** 確定（公開）。公開後の変更も、もう一度押せば反映される */
+  async publish() {
+    const message = this.hasPublished
+      ? 'たたき台の変更内容を公開します。よろしいですか？'
+      : 'この期間のシフトを確定して、スタッフに公開します。よろしいですか？';
+    if (!confirm(message)) return;
+
+    try {
+      await SupaAPI.publishPeriod(this.period.id);
+      this.hasPublished = true;
+      Object.keys(this.assign).forEach(uid => {
+        Object.keys(this.assign[uid]).forEach(d => {
+          this.assign[uid][d].status = 'published';
+        });
+      });
+      this._updatePublishBar();
+      showToast('公開しました。スタッフのアプリに表示されます');
+    } catch (err) {
+      showToast(err.message);
+      console.error('[DraftEditor.publish]', err);
+    }
+  },
+
+  _updatePublishBar() {
+    const badge = document.getElementById('editor-published-badge');
+    const btn = document.getElementById('editor-publish-btn');
+    if (badge) badge.classList.toggle('visible', this.hasPublished);
+    if (btn) btn.textContent = this.hasPublished ? '変更を公開する ✓' : '確定して公開する ✓';
+  },
+
+  // --------------------------------------------------------
+  // 日付ヘルパー
+  // --------------------------------------------------------
+
+  _datesBetween(start, end) {
+    const dates = [];
+    const s = start.split('-').map(Number);
+    const e = end.split('-').map(Number);
+    const cur = new Date(s[0], s[1] - 1, s[2]);
+    const last = new Date(e[0], e[1] - 1, e[2]);
+    while (cur <= last) {
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      const d = String(cur.getDate()).padStart(2, '0');
+      dates.push(cur.getFullYear() + '-' + m + '-' + d);
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  },
+
+  _formatDateLabel(dateStr) {
+    const parts = dateStr.split('-').map(Number);
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    const youbi = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
+    return parts[1] + '月' + parts[2] + '日（' + youbi + '）';
+  }
+};
+
+// ============================================================
+// エントリーポイント
+// ============================================================
+
+async function initApp() {
+  try {
+    await liff.init({ liffId: CONFIG_V2.LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+
+    SupaAPI.init();
+    const result = await SupaAPI.login();
+    if (result.status === 'need_registration') {
+      showError('先にシフト提出アプリで初回登録を済ませてください。');
+      return;
+    }
+
+    const me = await SupaAPI.getMe();
+    AdminState.userId      = me.profile.id;
+    AdminState.displayName = me.profile.display_name;
+    AdminState.managed     = me.memberships.filter(
+      m => m.role === 'admin' || m.role === 'manager');
+
+    if (!AdminState.managed.length) {
+      showError('このページは店長専用です。');
+      return;
+    }
+
+    const nameEl = document.getElementById('admin-member-name');
+    if (nameEl) nameEl.textContent = AdminState.displayName || '';
+    AdminPeriods.init();
+
+  } catch (err) {
+    console.error('[initApp] 起動エラー:', err);
+    showError('起動に失敗しました。\n\n' + err.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  const loadingScreen = document.getElementById('screen-loading');
+  if (loadingScreen) loadingScreen.classList.add('active');
+  initApp();
+});

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#06C755">
+  <title>アレグリア シフト作成（店長）</title>
+  <link rel="stylesheet" href="css/style.css?v=20260603-close-window">
+  <style>
+    /* ===== 店長ツール専用スタイル（style.cssは変更しない） ===== */
+    .day-nav {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin-bottom: 8px;
+    }
+    .day-nav-btn {
+      flex: 0 0 56px; height: 48px; font-size: 20px; border-radius: 10px;
+      border: 1px solid #d9d9d9; background: #fff; cursor: pointer;
+    }
+    .day-nav-btn:disabled { opacity: 0.3; }
+    .day-nav-center { flex: 1; text-align: center; }
+    .day-nav-date { font-size: 18px; font-weight: 700; }
+    .day-nav-pos { font-size: 12px; color: #888; }
+    .editor-toolbar { margin-bottom: 12px; }
+
+    .staff-row {
+      background: #fff; border: 1px solid #e3e3e3; border-radius: 10px;
+      padding: 10px 12px; margin-bottom: 8px;
+    }
+    .staff-row.on { border-color: #06C755; background: #f3fcf6; }
+    .staff-row-top { display: flex; align-items: center; gap: 8px; }
+    .staff-name { font-weight: 600; flex: 1; min-width: 0; font-size: 14px; }
+    .hope { font-size: 12px; white-space: nowrap; }
+    .hope.ok  { color: #0a8f43; }
+    .hope.ng  { color: #999; }
+    .hope.none { color: #c5c5c5; }
+    .assign-toggle {
+      flex: 0 0 64px; height: 36px; border-radius: 18px; font-size: 13px;
+      border: 1px solid #d9d9d9; background: #f5f5f5; color: #888; cursor: pointer;
+    }
+    .assign-toggle.on { background: #06C755; border-color: #06C755; color: #fff; font-weight: 700; }
+    .staff-row-times {
+      display: flex; align-items: center; gap: 6px; margin-top: 8px;
+    }
+    .staff-row-times select {
+      flex: 1; height: 40px; font-size: 15px; border-radius: 8px;
+      border: 1px solid #ccc; background: #fff; padding: 0 8px;
+    }
+    .period-status-badge {
+      display: inline-block; margin-left: 8px; padding: 2px 8px;
+      border-radius: 10px; font-size: 11px; vertical-align: middle;
+    }
+    .period-status-badge.open { background: #e7f8ee; color: #0a8f43; }
+    .period-status-badge.closed { background: #f0f0f0; color: #888; }
+    .published-badge {
+      display: none; margin: 0 0 8px; padding: 8px 12px; border-radius: 8px;
+      background: #e7f1ff; color: #1a5fb4; font-size: 13px; text-align: center;
+    }
+    .published-badge.visible { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- 画面1: ローディング -->
+  <section id="screen-loading" class="screen active">
+    <p class="loading-logo">アレグリア</p>
+    <p class="loading-sub">シフト作成（店長用）</p>
+    <div class="spinner" role="status" aria-label="読み込み中"></div>
+  </section>
+
+  <!-- 画面2: 期間選択 -->
+  <section id="screen-period-list" class="screen">
+    <header class="screen-header">
+      <h1>シフト作成</h1>
+      <p class="screen-subtitle">こんにちは、<span id="admin-member-name"></span>さん。期間を選んでください</p>
+    </header>
+    <div class="screen-body">
+      <div id="admin-period-list"></div>
+      <button class="btn-secondary mt-16" onclick="location.href='submit-v2.html'">アプリのホームへ戻る</button>
+    </div>
+  </section>
+
+  <!-- 画面3: たたき台編集 -->
+  <section id="screen-editor" class="screen">
+    <header class="screen-header">
+      <h1>シフト作成</h1>
+      <p class="screen-subtitle" id="editor-period-label"></p>
+    </header>
+    <div class="screen-body">
+
+      <div id="editor-published-badge" class="published-badge">
+        ✅ この期間は公開済みです。変更したら「変更を公開する」を押してください
+      </div>
+
+      <div class="editor-toolbar">
+        <button class="btn-secondary btn-sm" onclick="DraftEditor.copyFromHopes()">
+          提出された希望をまとめて取り込む
+        </button>
+      </div>
+
+      <div class="day-nav">
+        <button class="day-nav-btn" id="editor-prev" onclick="DraftEditor.prevDay()">←</button>
+        <div class="day-nav-center">
+          <div id="editor-day-label" class="day-nav-date"></div>
+          <div id="editor-day-pos" class="day-nav-pos"></div>
+        </div>
+        <button class="day-nav-btn" id="editor-next" onclick="DraftEditor.nextDay()">→</button>
+      </div>
+
+      <p id="editor-day-summary" class="manage-summary"></p>
+      <div id="editor-day-body"></div>
+
+      <div class="mt-16">
+        <button class="btn-primary" id="editor-publish-btn" onclick="DraftEditor.publish()">
+          確定して公開する ✓
+        </button>
+        <button class="btn-secondary mt-12" onclick="AdminPeriods.init()">期間一覧へ戻る</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- エラー画面 -->
+  <section id="screen-error" class="screen">
+    <div class="error-icon">⚠️</div>
+    <h2 class="error-title">エラーが発生しました</h2>
+    <p id="error-message"></p>
+    <button class="btn-primary" style="max-width:280px" onclick="location.reload()">再試行する</button>
+    <button class="btn-secondary mt-12" style="max-width:280px" onclick="location.href='submit-v2.html'">
+      アプリのホームへ戻る
+    </button>
+  </section>
+
+  <!-- トースト通知 -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- ===========================================================
+       スクリプト読み込み順序:
+         1. LIFF SDK / supabase-js（CDN）
+         2. config_v2.js ← CONFIG_V2
+         3. api_v2.js    ← SupaAPI
+         4. admin_v2.js  ← AdminState, AdminPeriods, DraftEditor, initApp
+  ============================================================ -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config_v2.js?v=20260613-v5"></script>
+  <script src="js/api_v2.js?v=20260613-v5"></script>
+  <script src="js/admin_v2.js?v=20260613-v5"></script>
+
+</body>
+</html>

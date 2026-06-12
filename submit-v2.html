@@ -57,6 +57,10 @@
           <span class="home-action-title">自分の提出済みシフトを見る</span>
           <span class="home-action-sub">提出後の内容を確認できます</span>
         </button>
+        <button id="home-published-btn" class="home-action-btn" onclick="Home.openPublished()">
+          <span class="home-action-title">確定シフトを見る</span>
+          <span class="home-action-sub">店長が確定した勤務予定を確認できます</span>
+        </button>
         <button id="home-manage-btn" class="home-action-btn" style="display:none" onclick="Home.openManage()">
           <span class="home-action-title">店舗の提出状況を見る</span>
           <span class="home-action-sub">スタッフごとの提出内容を確認します</span>
@@ -111,7 +115,41 @@
     </header>
     <div class="screen-body">
       <div id="manage-body"></div>
+      <button class="btn-primary mt-16" onclick="location.href='admin-v2.html'">
+        シフトを作成する（たたき台 → 確定）
+      </button>
+      <button class="btn-secondary mt-12" onclick="Home.show()">ホームへ戻る</button>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面6b: 確定シフト（本人閲覧・期間一覧）
+  ============================================================ -->
+  <section id="screen-published" class="screen">
+    <header class="screen-header">
+      <h1>確定シフト</h1>
+      <p class="screen-subtitle">確認する期間を選んでください</p>
+    </header>
+    <div class="screen-body">
+      <div id="published-period-list"></div>
       <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
+    </div>
+  </section>
+
+
+  <!-- ===========================================================
+       画面6c: 確定シフト（本人閲覧・日別リスト）
+  ============================================================ -->
+  <section id="screen-published-detail" class="screen">
+    <header class="screen-header">
+      <h1>確定シフト</h1>
+      <p class="screen-subtitle" id="published-detail-label"></p>
+    </header>
+    <div class="screen-body">
+      <div id="published-detail-list" class="confirm-shift-list"></div>
+      <button class="btn-secondary mt-16" onclick="showScreen('published')">期間一覧へ戻る</button>
+      <button class="btn-secondary mt-12" onclick="Home.show()">ホームへ戻る</button>
     </div>
   </section>
 
@@ -288,19 +326,21 @@
          4. name_selector_v2.js ← NameSelector（SupaAPI に依存）
          5. calendar.js    ← Calendar（GAS版をそのまま再利用）
          6. history_v2.js  ← HistoryViewer（SupaAPI に依存）
-         7. manager_v2.js  ← ManagerViewer（SupaAPI に依存）
-         8. main_v2.js     ← AppState, showScreen, PeriodSelector,
+         7. published_v2.js ← PublishedViewer（SupaAPI に依存）
+         8. manager_v2.js  ← ManagerViewer（SupaAPI に依存）
+         9. main_v2.js     ← AppState, showScreen, PeriodSelector,
                              Confirmation, initApp（すべてに依存）
   ============================================================ -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config_v2.js?v=20260613-v4-prod"></script>
-  <script src="js/api_v2.js?v=20260613-v3"></script>
+  <script src="js/api_v2.js?v=20260613-v5"></script>
   <script src="js/name_selector_v2.js?v=20260613-v2"></script>
   <script src="js/calendar.js?v=20260531-submission-history"></script>
   <script src="js/history_v2.js?v=20260613-v2"></script>
+  <script src="js/published_v2.js?v=20260613-v5"></script>
   <script src="js/manager_v2.js?v=20260613-v3"></script>
-  <script src="js/main_v2.js?v=20260613-v3"></script>
+  <script src="js/main_v2.js?v=20260613-v5"></script>
 
 </body>
 </html>

@@ -327,9 +327,13 @@ const Home = {
     const nameEl = document.getElementById('home-member-name');
     const manageBtn = document.getElementById('home-manage-btn');
     const submitBtn = document.getElementById('home-submit-btn');
+    const publishedBtn = document.getElementById('home-published-btn');
     if (nameEl) nameEl.textContent = AppState.displayName || '';
     if (submitBtn) {
       submitBtn.style.display = AppState.store ? '' : 'none';
+    }
+    if (publishedBtn) {
+      publishedBtn.style.display = AppState.store ? '' : 'none';
     }
     if (manageBtn) {
       manageBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
@@ -349,6 +353,11 @@ const Home = {
   openHistory() {
     showScreen('history');
     HistoryViewer.init();
+  },
+
+  openPublished() {
+    showScreen('published');
+    PublishedViewer.init();
   },
 
   openManage() {

@@ -352,5 +352,137 @@ const SupaAPI = {
       .sort((a, b) =>
         a.memberCode.localeCompare(b.memberCode, 'ja', { numeric: true }) ||
         a.name.localeCompare(b.name, 'ja'));
+  },
+
+  // ============================================================
+  // 確定シフト（店長: たたき台編集〜確定 / スタッフ: 閲覧）
+  // ============================================================
+
+  /**
+   * たたき台編集に必要なデータ一式を取得（店長専用・RLSで保護）
+   * @param {Object} period - 期間VM（{id, storeId}を使用）
+   * @returns {Promise<{members:Array, hopes:Object, drafts:Array}>}
+   *   hopes[userId][date] = {available, start, end}（提出された希望）
+   *   drafts = published_shifts の既存行（たたき台＋確定済み）
+   */
+  async getDraftData(period) {
+    const members = await this.getManageOverview(period);
+
+    const subs = await this.db.from('submissions')
+      .select('id, user_id')
+      .eq('period_id', period.id);
+    if (subs.error) throw new Error('提出の取得に失敗しました: ' + subs.error.message);
+
+    const hopes = {};
+    if ((subs.data || []).length) {
+      const items = await this.db.from('submission_items')
+        .select('submission_id, work_date, shift_type, start_time, end_time')
+        .in('submission_id', subs.data.map(s => s.id));
+      if (items.error) throw new Error('希望明細の取得に失敗しました: ' + items.error.message);
+
+      const userBySub = {};
+      subs.data.forEach(s => { userBySub[s.id] = s.user_id; });
+      (items.data || []).forEach(it => {
+        const uid = userBySub[it.submission_id];
+        if (!hopes[uid]) hopes[uid] = {};
+        const available = it.shift_type !== 'off' && !!it.start_time && !!it.end_time;
+        hopes[uid][it.work_date] = {
+          available: available,
+          start: available ? String(it.start_time).slice(0, 5) : null,
+          end  : available ? String(it.end_time).slice(0, 5)   : null
+        };
+      });
+    }
+
+    const drafts = await this.db.from('published_shifts')
+      .select('user_id, work_date, start_time, end_time, status')
+      .eq('period_id', period.id);
+    if (drafts.error) throw new Error('たたき台の取得に失敗しました: ' + drafts.error.message);
+
+    return { members: members, hopes: hopes, drafts: drafts.data || [] };
+  },
+
+  /**
+   * たたき台の1コマを保存。
+   * 既に確定済みの行は status を変えず時刻だけ更新する（insert時のみ既定で draft）。
+   */
+  async saveDraftShift(period, userId, date, start, end) {
+    const res = await this.db.from('published_shifts')
+      .upsert({
+        store_id  : period.storeId,
+        period_id : period.id,
+        user_id   : userId,
+        work_date : date,
+        shift_type: this.shiftTypeOf({ available: true, start: start, end: end }),
+        start_time: start,
+        end_time  : end,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'period_id,user_id,work_date' });
+    if (res.error) throw new Error('保存に失敗しました: ' + res.error.message);
+  },
+
+  /** たたき台の1コマを削除（休みに戻す） */
+  async deleteDraftShift(periodId, userId, date) {
+    const res = await this.db.from('published_shifts')
+      .delete()
+      .eq('period_id', periodId)
+      .eq('user_id', userId)
+      .eq('work_date', date);
+    if (res.error) throw new Error('削除に失敗しました: ' + res.error.message);
+  },
+
+  /** 提出された希望をたたき台として一括取り込み（既存のコマには触れない） */
+  async createDraftFromHopes(period, rows) {
+    if (!rows.length) return;
+    const res = await this.db.from('published_shifts')
+      .upsert(rows.map(r => ({
+        store_id  : period.storeId,
+        period_id : period.id,
+        user_id   : r.userId,
+        work_date : r.date,
+        shift_type: this.shiftTypeOf({ available: true, start: r.start, end: r.end }),
+        start_time: r.start,
+        end_time  : r.end
+      })), { onConflict: 'period_id,user_id,work_date', ignoreDuplicates: true });
+    if (res.error) throw new Error('一括取り込みに失敗しました: ' + res.error.message);
+  },
+
+  /** 期間の全コマを確定（公開）する。再実行で変更分も公開される */
+  async publishPeriod(periodId) {
+    const now = new Date().toISOString();
+    const res = await this.db.from('published_shifts')
+      .update({ status: 'published', published_at: now, updated_at: now })
+      .eq('period_id', periodId);
+    if (res.error) throw new Error('確定に失敗しました: ' + res.error.message);
+  },
+
+  /** 自分の確定シフトがある期間一覧（新しい順） */
+  async getMyPublishedPeriods() {
+    const rows = await this.db.from('published_shifts')
+      .select('period_id')
+      .eq('user_id', this.user.id)
+      .eq('status', 'published');
+    if (rows.error) throw new Error('確定シフトの取得に失敗しました: ' + rows.error.message);
+
+    const ids = Array.from(new Set((rows.data || []).map(r => r.period_id)));
+    if (!ids.length) return [];
+
+    const per = await this.db.from('shift_periods')
+      .select('id, store_id, title, start_date, end_date, deadline')
+      .in('id', ids);
+    if (per.error) throw new Error('期間情報の取得に失敗しました: ' + per.error.message);
+    return (per.data || []).sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
+  },
+
+  /** 指定期間の自分の確定シフト */
+  async getMyPublishedShifts(periodId) {
+    const res = await this.db.from('published_shifts')
+      .select('work_date, start_time, end_time')
+      .eq('period_id', periodId)
+      .eq('user_id', this.user.id)
+      .eq('status', 'published')
+      .order('work_date', { ascending: true });
+    if (res.error) throw new Error('確定シフトの取得に失敗しました: ' + res.error.message);
+    return res.data || [];
   }
 };
