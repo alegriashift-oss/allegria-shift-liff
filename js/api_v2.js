@@ -556,12 +556,13 @@ const SupaAPI = {
     if (res.error) throw new Error('再雇用処理に失敗しました: ' + res.error.message);
   },
 
-  /** 表示順どおりに sort_order を 0,1,2... と振り直す */
+  /**
+   * 表示順どおりに sort_order を 0,1,2... と振り直す。
+   * DB関数（reorder_store_members）で1回のリクエスト・1文のUPDATEとして実行する
+   * ため、全件成功か全件失敗かのどちらかになり、中途半端な保存が起きない。
+   */
   async reorderStoreMembers(orderedIds) {
-    const results = await Promise.all(orderedIds.map((id, index) =>
-      this.db.from('store_members').update({ sort_order: index }).eq('id', id)
-    ));
-    const failed = results.find(r => r.error);
-    if (failed) throw new Error('並び順の保存に失敗しました: ' + failed.error.message);
+    const res = await this.db.rpc('reorder_store_members', { ordered_ids: orderedIds });
+    if (res.error) throw new Error('並び順の保存に失敗しました: ' + res.error.message);
   }
 };

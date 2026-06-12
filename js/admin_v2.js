@@ -345,7 +345,8 @@ const MemberManager = {
       await SupaAPI.reorderStoreMembers(orderedIds);
       showToast('並び順を保存しました');
     } catch (err) {
-      showToast('並び順の保存に失敗しました。読み込み直します');
+      // 原因がわかるようエラー内容をそのまま表示する
+      showToast(err.message + '（読み込み直します）', 5000);
       console.error('[MemberManager._onReorder]', err);
       this.load();
     }
