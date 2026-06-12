@@ -484,5 +484,84 @@ const SupaAPI = {
       .order('work_date', { ascending: true });
     if (res.error) throw new Error('確定シフトの取得に失敗しました: ' + res.error.message);
     return res.data || [];
+  },
+
+  // ============================================================
+  // メンバー管理（店長向け・admin-v2.html）
+  // 物理削除（DELETE）は提出履歴がcascadeで消えるため絶対に行わない。
+  // 退職 = status='retired' へのUPDATEのみ。
+  // ============================================================
+
+  /**
+   * 店舗のメンバー一覧（active＋retired）を並び順で取得。
+   * 表示名は store_members.display_name → profiles.display_name の順で解決し、
+   * resolved_name として返す。
+   */
+  async getStoreMembers(storeId) {
+    const res = await this.db.from('store_members')
+      .select('id, user_id, display_name, member_code, role, status, sort_order')
+      .eq('store_id', storeId)
+      .in('status', ['active', 'retired'])
+      .order('sort_order', { ascending: true })
+      .order('member_code', { ascending: true, nullsFirst: false });
+    if (res.error) throw new Error('メンバー一覧の取得に失敗しました: ' + res.error.message);
+    const rows = res.data || [];
+
+    const userIds = rows.filter(r => r.user_id).map(r => r.user_id);
+    const nameById = {};
+    if (userIds.length) {
+      const prof = await this.db.from('profiles')
+        .select('id, display_name')
+        .in('id', userIds);
+      if (prof.error) throw new Error('メンバー名の取得に失敗しました: ' + prof.error.message);
+      (prof.data || []).forEach(p => { nameById[p.id] = p.display_name; });
+    }
+    rows.forEach(r => {
+      r.resolved_name = r.display_name || nameById[r.user_id] || '（名前未設定）';
+    });
+    return rows;
+  },
+
+  /** メンバーを追加（LINE未連携 = user_id NULL で作成。本人の初回ログイン時に連携される） */
+  async addStoreMember(storeId, displayName, memberCode, sortOrder) {
+    const res = await this.db.from('store_members')
+      .insert({
+        store_id    : storeId,
+        user_id     : null,
+        display_name: displayName,
+        member_code : memberCode || null,
+        role        : 'staff',
+        status      : 'active',
+        sort_order  : sortOrder
+      })
+      .select('id')
+      .single();
+    if (res.error) throw new Error('メンバーの追加に失敗しました: ' + res.error.message);
+    return res.data.id;
+  },
+
+  /** 退職にする（履歴は残る） */
+  async retireStoreMember(memberId) {
+    const res = await this.db.from('store_members')
+      .update({ status: 'retired' })
+      .eq('id', memberId);
+    if (res.error) throw new Error('退職処理に失敗しました: ' + res.error.message);
+  },
+
+  /** 退職者を再雇用（activeに戻し、並び順は末尾へ） */
+  async reactivateStoreMember(memberId, sortOrder) {
+    const res = await this.db.from('store_members')
+      .update({ status: 'active', sort_order: sortOrder })
+      .eq('id', memberId);
+    if (res.error) throw new Error('再雇用処理に失敗しました: ' + res.error.message);
+  },
+
+  /** 表示順どおりに sort_order を 0,1,2... と振り直す */
+  async reorderStoreMembers(orderedIds) {
+    const results = await Promise.all(orderedIds.map((id, index) =>
+      this.db.from('store_members').update({ sort_order: index }).eq('id', id)
+    ));
+    const failed = results.find(r => r.error);
+    if (failed) throw new Error('並び順の保存に失敗しました: ' + failed.error.message);
   }
 };

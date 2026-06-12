@@ -107,6 +107,252 @@ const AdminPeriods = {
 };
 
 // ============================================================
+// メンバー管理画面（期間に紐づかない・店舗単位の機能）
+// ============================================================
+
+const MemberManager = {
+  _storeId    : null,   // 選択中の店舗
+  _members    : [],     // active＋retired の全行（サーバーの並び順）
+  _showRetired: false,
+  _sortable   : null,   // SortableJSのインスタンス（コンテナに一度だけ付ける）
+
+  /** 期間選択画面の「メンバー管理」ボタンから入る */
+  open() {
+    if (!this._storeId ||
+        !AdminState.managed.some(m => m.store_id === this._storeId)) {
+      this._storeId = AdminState.managed.length
+        ? AdminState.managed[0].store_id : null;
+    }
+    if (!this._storeId) {
+      showToast('店長権限のある店舗がありません');
+      return;
+    }
+    showScreen('member-list');
+    this.hideAddForm();
+    const toggle = document.getElementById('member-show-retired');
+    if (toggle) toggle.checked = this._showRetired;
+    this._renderStoreTabs();
+    this.load();
+  },
+
+  _store() {
+    return AdminState.managed.find(m => m.store_id === this._storeId) || null;
+  },
+
+  _active()  { return this._members.filter(m => m.status === 'active'); },
+  _retired() { return this._members.filter(m => m.status === 'retired'); },
+
+  // --------------------------------------------------------
+  // 店舗切り替え
+  // --------------------------------------------------------
+
+  _renderStoreTabs() {
+    const label = document.getElementById('member-store-label');
+    const store = this._store();
+    if (label) label.textContent = store ? store.store_name : '';
+
+    const tabs = document.getElementById('member-store-tabs');
+    if (!tabs) return;
+    if (AdminState.managed.length < 2) {
+      tabs.style.display = 'none';
+      return;
+    }
+    tabs.style.display = '';
+    tabs.innerHTML = AdminState.managed.map(m => `
+      <button class="store-tab${m.store_id === this._storeId ? ' on' : ''}"
+        onclick="MemberManager.switchStore('${m.store_id}')">${escapeHtml(m.store_name)}</button>
+    `).join('');
+  },
+
+  switchStore(storeId) {
+    if (!AdminState.managed.some(m => m.store_id === storeId)) return;
+    this._storeId = storeId;
+    this.hideAddForm();
+    this._renderStoreTabs();
+    this.load();
+  },
+
+  // --------------------------------------------------------
+  // 読み込みと描画
+  // --------------------------------------------------------
+
+  async load() {
+    const activeBox = document.getElementById('member-list-active');
+    const retiredBox = document.getElementById('member-list-retired');
+    activeBox.innerHTML = '<p class="loading-text">メンバーを読み込み中…</p>';
+    retiredBox.innerHTML = '';
+    try {
+      this._members = await SupaAPI.getStoreMembers(this._storeId);
+      this.renderList();
+    } catch (err) {
+      activeBox.innerHTML = `<p class="error-text">${escapeHtml(err.message)}</p>`;
+    }
+  },
+
+  renderList() {
+    const activeBox = document.getElementById('member-list-active');
+    const active = this._active();
+    activeBox.innerHTML = active.length
+      ? active.map(m => this._rowHtml(m)).join('')
+      : '<p class="info-text">メンバーがいません。「＋ メンバーを追加」から登録できます。</p>';
+    this._initSortable();
+
+    const retiredBox = document.getElementById('member-list-retired');
+    retiredBox.style.display = this._showRetired ? '' : 'none';
+    if (this._showRetired) {
+      const retired = this._retired();
+      retiredBox.innerHTML = retired.length
+        ? '<p class="member-section-label">退職者（「再雇用」でリストに戻せます）</p>'
+          + retired.map(m => this._rowHtml(m)).join('')
+        : '<p class="info-text">退職者はいません。</p>';
+    }
+  },
+
+  _rowHtml(m) {
+    const isRetired = m.status === 'retired';
+    const isSelf = !!m.user_id && m.user_id === AdminState.userId;
+    const roleBadge = (m.role === 'admin' || m.role === 'manager')
+      ? '<span class="role-badge">店長</span>' : '';
+    const linkBadge = m.user_id
+      ? '<span class="link-badge linked">連携済み</span>'
+      : '<span class="link-badge unlinked">LINE未連携</span>';
+    const action = isRetired
+      ? `<button class="member-action-btn rehire" onclick="MemberManager.reactivate('${m.id}')">再雇用</button>`
+      : (isSelf ? ''
+        : `<button class="member-action-btn" onclick="MemberManager.retire('${m.id}')">退職</button>`);
+
+    return `
+      <div class="member-row${isRetired ? ' retired' : ''}" data-id="${m.id}">
+        ${isRetired ? '' : '<span class="member-drag-handle" aria-label="並べ替え">≡</span>'}
+        <span class="member-name">${escapeHtml(m.resolved_name)}${roleBadge}</span>
+        ${linkBadge}
+        ${action}
+      </div>
+    `;
+  },
+
+  toggleRetired(checked) {
+    this._showRetired = checked;
+    this.renderList();
+  },
+
+  // --------------------------------------------------------
+  // 追加
+  // --------------------------------------------------------
+
+  showAddForm() {
+    const form = document.getElementById('member-add-form');
+    if (!form) return;
+    form.style.display = '';
+    document.getElementById('member-add-name').value = '';
+    document.getElementById('member-add-code').value = '';
+    document.getElementById('member-add-name').focus();
+  },
+
+  hideAddForm() {
+    const form = document.getElementById('member-add-form');
+    if (form) form.style.display = 'none';
+  },
+
+  async submitAdd() {
+    const name = document.getElementById('member-add-name').value.trim();
+    const code = document.getElementById('member-add-code').value.trim();
+    if (!name) {
+      showToast('名前を入力してください');
+      return;
+    }
+    const dup = this._members.find(m => m.status === 'active' && m.resolved_name === name);
+    if (dup && !confirm('同じ名前のメンバーが既にいます。重複して追加しますか？')) return;
+
+    try {
+      const maxOrder = this._active()
+        .reduce((mx, m) => Math.max(mx, m.sort_order || 0), -1);
+      await SupaAPI.addStoreMember(this._storeId, name, code || null, maxOrder + 1);
+      this.hideAddForm();
+      showToast(name + ' さんを追加しました（LINE未連携）');
+      await this.load();
+    } catch (err) {
+      showToast(err.message);
+      console.error('[MemberManager.submitAdd]', err);
+    }
+  },
+
+  // --------------------------------------------------------
+  // 退職・再雇用（物理削除はしない）
+  // --------------------------------------------------------
+
+  async retire(memberId) {
+    const m = this._members.find(x => x.id === memberId);
+    if (!m) return;
+    if (!confirm(m.resolved_name + ' さんを退職にします。\n過去の提出履歴は残ります。よろしいですか？')) return;
+
+    try {
+      await SupaAPI.retireStoreMember(memberId);
+      showToast(m.resolved_name + ' さんを退職にしました');
+      await this.load();
+    } catch (err) {
+      showToast(err.message);
+      console.error('[MemberManager.retire]', err);
+    }
+  },
+
+  async reactivate(memberId) {
+    const m = this._members.find(x => x.id === memberId);
+    if (!m) return;
+    try {
+      const maxOrder = this._active()
+        .reduce((mx, x) => Math.max(mx, x.sort_order || 0), -1);
+      await SupaAPI.reactivateStoreMember(memberId, maxOrder + 1);
+      showToast(m.resolved_name + ' さんを再雇用にしました');
+      await this.load();
+    } catch (err) {
+      showToast(err.message);
+      console.error('[MemberManager.reactivate]', err);
+    }
+  },
+
+  // --------------------------------------------------------
+  // 並べ替え（ドラッグ＆ドロップ → 即保存）
+  // --------------------------------------------------------
+
+  _initSortable() {
+    const box = document.getElementById('member-list-active');
+    if (!box || typeof Sortable === 'undefined') return;
+    if (this._sortable) return; // コンテナは固定なので一度だけ付ける
+    this._sortable = Sortable.create(box, {
+      handle           : '.member-drag-handle',
+      animation        : 150,
+      delay            : 150,   // スクロールと誤反応しないよう長押しで開始
+      delayOnTouchOnly : true,
+      onEnd            : () => this._onReorder()
+    });
+  },
+
+  async _onReorder() {
+    const box = document.getElementById('member-list-active');
+    const orderedIds = Array.from(box.querySelectorAll('.member-row'))
+      .map(el => el.dataset.id);
+
+    // ローカル状態をDOMの並びに合わせ直す（retiredは末尾に維持）
+    const retired = this._retired();
+    const byId = {};
+    this._members.forEach(m => { byId[m.id] = m; });
+    const actives = orderedIds.map(id => byId[id]).filter(Boolean);
+    actives.forEach((m, index) => { m.sort_order = index; });
+    this._members = actives.concat(retired);
+
+    try {
+      await SupaAPI.reorderStoreMembers(orderedIds);
+      showToast('並び順を保存しました');
+    } catch (err) {
+      showToast('並び順の保存に失敗しました。読み込み直します');
+      console.error('[MemberManager._onReorder]', err);
+      this.load();
+    }
+  }
+};
+
+// ============================================================
 // たたき台編集画面
 // ============================================================
 

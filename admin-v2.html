@@ -56,6 +56,67 @@
       background: #e7f1ff; color: #1a5fb4; font-size: 13px; text-align: center;
     }
     .published-badge.visible { display: block; }
+
+    /* ===== メンバー管理画面 ===== */
+    .store-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .store-tab {
+      flex: 1; height: 44px; border-radius: 10px; font-size: 14px;
+      border: 1px solid #d9d9d9; background: #fff; cursor: pointer;
+    }
+    .store-tab.on {
+      background: #06C755; border-color: #06C755; color: #fff; font-weight: 700;
+    }
+    .member-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin-bottom: 12px;
+    }
+    .retired-toggle {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 13px; color: #666; white-space: nowrap;
+    }
+    .member-add-form {
+      background: #fff; border: 1px solid #e3e3e3; border-radius: 10px;
+      padding: 12px; margin-bottom: 12px;
+    }
+    .member-add-form input {
+      width: 100%; height: 44px; font-size: 15px; border: 1px solid #ccc;
+      border-radius: 8px; padding: 0 10px; margin-bottom: 8px; box-sizing: border-box;
+    }
+    .member-add-actions { display: flex; gap: 8px; }
+    .member-add-actions button { flex: 1; }
+    .member-row {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid #e3e3e3; border-radius: 10px;
+      padding: 10px 12px; margin-bottom: 8px;
+    }
+    .member-row.retired { opacity: 0.55; }
+    .member-row.sortable-ghost { opacity: 0.4; background: #eafaf0; }
+    .member-drag-handle {
+      flex: 0 0 28px; text-align: center; font-size: 18px; color: #bbb;
+      cursor: grab; touch-action: none; /* タッチでのドラッグを優先 */
+    }
+    .member-name {
+      flex: 1; min-width: 0; font-size: 14px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .role-badge {
+      display: inline-block; margin-left: 6px; padding: 1px 6px;
+      border-radius: 8px; font-size: 10px; background: #fff3df; color: #b97708;
+      vertical-align: middle;
+    }
+    .link-badge {
+      flex: 0 0 auto; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; white-space: nowrap;
+    }
+    .link-badge.linked   { background: #e7f8ee; color: #0a8f43; }
+    .link-badge.unlinked { background: #f0f0f0; color: #888; }
+    .member-action-btn {
+      flex: 0 0 auto; height: 32px; padding: 0 12px; border-radius: 16px;
+      font-size: 12px; border: 1px solid #e0b4b4; background: #fff;
+      color: #c0392b; cursor: pointer;
+    }
+    .member-action-btn.rehire { border-color: #b4d4e0; color: #1a6fa8; }
+    .member-section-label { font-size: 12px; color: #999; margin: 16px 0 6px; }
   </style>
 </head>
 <body>
@@ -75,7 +136,48 @@
     </header>
     <div class="screen-body">
       <div id="admin-period-list"></div>
-      <button class="btn-secondary mt-16" onclick="location.href='submit-v2.html'">アプリのホームへ戻る</button>
+      <button class="btn-secondary mt-16" onclick="MemberManager.open()">👥 メンバー管理</button>
+      <button class="btn-secondary mt-12" onclick="location.href='submit-v2.html'">アプリのホームへ戻る</button>
+    </div>
+  </section>
+
+  <!-- 画面2b: メンバー管理（期間に紐づかない・店舗単位）
+       リストの中身は MemberManager（admin_v2.js）が描画する -->
+  <section id="screen-member-list" class="screen">
+    <header class="screen-header">
+      <h1>メンバー管理</h1>
+      <p class="screen-subtitle" id="member-store-label"></p>
+    </header>
+    <div class="screen-body">
+
+      <!-- 店舗切り替え（権限のある店舗が複数のときだけJSが表示） -->
+      <div id="member-store-tabs" class="store-tabs" style="display:none"></div>
+
+      <div class="member-toolbar">
+        <button class="btn-secondary btn-sm" onclick="MemberManager.showAddForm()">＋ メンバーを追加</button>
+        <label class="retired-toggle">
+          <input type="checkbox" id="member-show-retired"
+            onchange="MemberManager.toggleRetired(this.checked)">
+          退職者を表示
+        </label>
+      </div>
+
+      <!-- 追加フォーム（通常は非表示） -->
+      <div id="member-add-form" class="member-add-form" style="display:none">
+        <input type="text" id="member-add-name" placeholder="名前（例: 山田　太郎）" maxlength="30">
+        <input type="text" id="member-add-code" placeholder="メンバーID（任意・例: M0040）" maxlength="10">
+        <div class="member-add-actions">
+          <button class="btn-secondary btn-sm" onclick="MemberManager.hideAddForm()">キャンセル</button>
+          <button class="btn-primary btn-sm" onclick="MemberManager.submitAdd()">追加する</button>
+        </div>
+      </div>
+
+      <!-- 在籍メンバー（ドラッグで並べ替え可能） -->
+      <div id="member-list-active"></div>
+      <!-- 退職者（トグルONのときだけ表示） -->
+      <div id="member-list-retired" style="display:none"></div>
+
+      <button class="btn-secondary mt-16" onclick="AdminPeriods.init()">期間一覧へ戻る</button>
     </div>
   </section>
 
@@ -135,16 +237,19 @@
 
   <!-- ===========================================================
        スクリプト読み込み順序:
-         1. LIFF SDK / supabase-js（CDN）
+         1. LIFF SDK / supabase-js / SortableJS（CDN）
+            SortableJSはメンバー並べ替えのドラッグ＆ドロップ用（タッチ対応）
          2. config_v2.js ← CONFIG_V2
          3. api_v2.js    ← SupaAPI
-         4. admin_v2.js  ← AdminState, AdminPeriods, DraftEditor, initApp
+         4. admin_v2.js  ← AdminState, AdminPeriods, MemberManager,
+                           DraftEditor, initApp
   ============================================================ -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
-  <script src="js/api_v2.js?v=20260613-v5"></script>
-  <script src="js/admin_v2.js?v=20260613-v5"></script>
+  <script src="js/api_v2.js?v=20260614-v7"></script>
+  <script src="js/admin_v2.js?v=20260614-v7"></script>
 
 </body>
 </html>
