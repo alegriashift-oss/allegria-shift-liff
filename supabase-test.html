@@ -302,15 +302,24 @@
     async function showMe() {
       setStatus('DB読み取り中…');
 
-      const profRes = await db.from('profiles').select('id, display_name, line_user_id');
-      if (profRes.error) { log('profiles読み取りエラー: ' + profRes.error.message, 'err'); return false; }
-      log('profiles: ' + JSON.stringify(profRes.data));
-      const me = (profRes.data || [])[0];
-      if (!me) { log('profilesが空です（RLSで自分の行が見えていない可能性）', 'err'); return false; }
+      // RLSは同僚の行も読める設計のため、自分のauthユーザーIDで必ず絞り込む
+      const { data: { user }, error: userErr } = await db.auth.getUser();
+      if (userErr || !user) { log('getUserエラー: ' + (userErr ? userErr.message : 'userなし'), 'err'); return false; }
+      log('auth uid: ' + user.id);
 
-      const memRes = await db.from('store_members').select('store_id, role, member_code, status');
+      const profRes = await db.from('profiles')
+        .select('id, display_name, line_user_id')
+        .eq('id', user.id);
+      if (profRes.error) { log('profiles読み取りエラー: ' + profRes.error.message, 'err'); return false; }
+      log('profiles(自分): ' + JSON.stringify(profRes.data));
+      const me = (profRes.data || [])[0];
+      if (!me) { log('自分のprofiles行が見つかりません（id=' + user.id + '）', 'err'); return false; }
+
+      const memRes = await db.from('store_members')
+        .select('store_id, role, member_code, status')
+        .eq('user_id', user.id);
       if (memRes.error) { log('store_members読み取りエラー: ' + memRes.error.message, 'err'); return false; }
-      log('store_members: ' + JSON.stringify(memRes.data));
+      log('store_members(自分): ' + JSON.stringify(memRes.data));
 
       const storeRes = await db.from('stores').select('id, name');
       if (storeRes.error) { log('stores読み取りエラー: ' + storeRes.error.message, 'err'); return false; }
