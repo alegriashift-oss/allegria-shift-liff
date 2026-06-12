@@ -7,6 +7,16 @@
  * GAS版との差分: v2では期間が店舗ごとの行になっており、期間ラベルに
  * 店舗名が付く（toPeriodVM）ため、店舗選択プルダウンは期間選択に統合した。
  */
+/**
+ * 提出表（スプレッドシート）への直接リンク（アレグリア運用）。
+ * Supabaseの提出はGASの10分同期でこのシートに反映されている。
+ * 店舗名の部分一致で行き先タブを選ぶ。
+ */
+const SHEET_LINKS = [
+  { match: '神保町', url: 'https://docs.google.com/spreadsheets/d/1M8L5aBwm0Aj4XZ94CbHZhwQi2GfnavSPmNKUM4pFJkY/edit?gid=2131904871#gid=2131904871' },
+  { match: '渋谷',   url: 'https://docs.google.com/spreadsheets/d/1M8L5aBwm0Aj4XZ94CbHZhwQi2GfnavSPmNKUM4pFJkY/edit?gid=917660237#gid=917660237' }
+];
+
 const ManagerViewer = {
   _periods : [],    // 期間VM（toPeriodVM済み）の配列
   _periodId: null,  // 選択中の期間ID
@@ -58,6 +68,10 @@ const ManagerViewer = {
         <select id="manage-period" class="filter-select" onchange="ManagerViewer.onPeriodChange(this.value)">
           ${this._periods.map(p => `<option value="${p.id}"${p.id === this._periodId ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('')}
         </select>
+        ${this._sheetUrlFor(period) ? `
+        <button class="btn-primary mt-12" onclick="ManagerViewer.openSheet()">
+          📄 提出表（スプレッドシート）を開く
+        </button>` : ''}
         <p class="manage-summary">提出済み ${submittedCount}名 / ${this._members.length}名</p>
         <div class="manage-member-list">
           ${this._members.map((member, index) => `
@@ -76,6 +90,33 @@ const ManagerViewer = {
   async onPeriodChange(periodId) {
     this._periodId = periodId;
     await this.loadOverview();
+  },
+
+  /** 選択中の期間の店舗に対応する提出表URLを返す（無ければnull） */
+  _sheetUrlFor(period) {
+    if (!period) return null;
+    const membership = AppState.memberships.find(m => m.store_id === period.storeId);
+    const storeName = membership ? membership.store_name : '';
+    const hit = SHEET_LINKS.find(link => storeName.indexOf(link.match) >= 0);
+    return hit ? hit.url : null;
+  },
+
+  /** 提出表（スプレッドシート）を外部ブラウザ/アプリで開く */
+  openSheet() {
+    const url = this._sheetUrlFor(this._selectedPeriod());
+    if (!url) {
+      showToast('この店舗の提出表リンクが設定されていません');
+      return;
+    }
+    try {
+      if (window.liff && typeof liff.isInClient === 'function' && liff.isInClient()) {
+        liff.openWindow({ url: url, external: true });
+        return;
+      }
+    } catch (err) {
+      console.warn('[ManagerViewer.openSheet] liff.openWindow failed:', err);
+    }
+    window.open(url, '_blank');
   },
 
   async openMember(index) {

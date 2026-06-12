@@ -115,10 +115,11 @@
     </header>
     <div class="screen-body">
       <div id="manage-body"></div>
-      <button class="btn-primary mt-16" onclick="location.href='admin-v2.html'">
+      <!-- アレグリア運用ではシフト作成はExcelで行うため非表示（商品化で再表示） -->
+      <button class="btn-primary mt-16" style="display:none" onclick="location.href='admin-v2.html'">
         シフトを作成する（たたき台 → 確定）
       </button>
-      <button class="btn-secondary mt-12" onclick="Home.show()">ホームへ戻る</button>
+      <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
     </div>
   </section>
 
@@ -339,8 +340,8 @@
   <script src="js/calendar.js?v=20260531-submission-history"></script>
   <script src="js/history_v2.js?v=20260613-v2"></script>
   <script src="js/published_v2.js?v=20260613-v5"></script>
-  <script src="js/manager_v2.js?v=20260613-v3"></script>
-  <script src="js/main_v2.js?v=20260613-v5"></script>
+  <script src="js/manager_v2.js?v=20260613-v6"></script>
+  <script src="js/main_v2.js?v=20260613-v6"></script>
 
 </body>
 </html>

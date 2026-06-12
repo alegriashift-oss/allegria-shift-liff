@@ -333,7 +333,9 @@ const Home = {
       submitBtn.style.display = AppState.store ? '' : 'none';
     }
     if (publishedBtn) {
-      publishedBtn.style.display = AppState.store ? '' : 'none';
+      // アレグリア運用ではシフトはExcelで管理するため非表示。
+      // 商品化で確定シフト配信を使う際は AppState.store ? '' : 'none' に戻す
+      publishedBtn.style.display = 'none';
     }
     if (manageBtn) {
       manageBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
