@@ -86,9 +86,9 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5seXp6cmdsbnFtY3NidmN3aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNDYwOTAsImV4cCI6MjA5NjgyMjA5MH0.FtbiB6J5eJpINYkwZleRmRdpjpEDvfISuBahIayJS1g';
     const LINE_AUTH_URL     = SUPABASE_URL + '/functions/v1/line-auth';
 
-    // テストLIFF ID。発行後ここに記入してpushするか、空のままなら
-    // ページ上の入力欄から保存できる（localStorage 'test_liff_id'）。
-    const TEST_LIFF_ID = '';
+    // テストLIFF ID。空のままならページ上の入力欄から保存できる
+    // （localStorage 'test_liff_id'）。
+    const TEST_LIFF_ID = '2010000154-2C3b8v2x';
 
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
