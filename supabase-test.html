@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#3ECF8E">
+  <title>Supabase 認証テスト</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      margin: 0; padding: 16px; background: #f5f6f8; color: #222;
+    }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    h2 { font-size: 14px; margin: 20px 0 6px; color: #555; }
+    .status {
+      padding: 12px; border-radius: 8px; background: #fff;
+      border: 1px solid #ddd; font-size: 15px; font-weight: bold;
+      margin-bottom: 12px; white-space: pre-wrap;
+    }
+    .status.ok    { border-color: #3ECF8E; background: #ecfbf4; color: #0b7a4b; }
+    .status.error { border-color: #e05656; background: #fdf0f0; color: #b03030; }
+    .card {
+      background: #fff; border: 1px solid #ddd; border-radius: 8px;
+      padding: 12px; margin-bottom: 8px; font-size: 14px;
+    }
+    .card .label { color: #888; font-size: 12px; }
+    button {
+      display: block; width: 100%; padding: 12px; margin: 6px 0;
+      font-size: 15px; border-radius: 8px; border: 1px solid #ccc;
+      background: #fff; cursor: pointer;
+    }
+    button.primary { background: #06C755; border-color: #06C755; color: #fff; font-weight: bold; }
+    input[type="text"] {
+      width: 100%; padding: 10px; font-size: 15px;
+      border: 1px solid #ccc; border-radius: 8px; margin: 6px 0;
+    }
+    #log {
+      background: #1e1e1e; color: #d4d4d4; font-size: 11px;
+      padding: 10px; border-radius: 8px; white-space: pre-wrap;
+      word-break: break-all; min-height: 80px; max-height: 50vh; overflow-y: auto;
+      font-family: Consolas, Menlo, monospace;
+    }
+    #log .err { color: #f48771; }
+    #log .ok  { color: #6ec571; }
+  </style>
+</head>
+<body>
+
+  <h1>Supabase 認証テスト</h1>
+
+  <div id="status" class="status">初期化中…</div>
+
+  <!-- テストLIFF IDが未設定のときだけ表示される入力欄 -->
+  <div id="liffid-setup" class="card" style="display:none">
+    <p style="margin:0 0 4px">テストLIFF IDが未設定です。<br>
+      LINE Developersで発行したLIFF ID（例: 2010000154-xxxxxxxx）を入力してください。<br>
+      <small>※この端末のlocalStorageに保存され、次回からは入力不要です。</small></p>
+    <input type="text" id="liffid-input" placeholder="2010000154-xxxxxxxx" autocomplete="off">
+    <button class="primary" onclick="saveLiffId()">保存して開始</button>
+  </div>
+
+  <!-- 初回登録: 候補一覧 -->
+  <div id="candidates" style="display:none">
+    <h2>お名前を選んでください（初回登録）</h2>
+    <div id="candidates-list"></div>
+  </div>
+
+  <!-- ログイン成功後の表示 -->
+  <div id="result"></div>
+
+  <div id="actions" style="display:none">
+    <button onclick="reLogin()">セッションを破棄して再ログイン</button>
+  </div>
+
+  <h2>ログ</h2>
+  <div id="log"></div>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // ============================================================
+    // 設定
+    // ============================================================
+    const SUPABASE_URL      = 'https://nlyzzrglnqmcsbvcwiav.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5seXp6cmdsbnFtY3NidmN3aWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNDYwOTAsImV4cCI6MjA5NjgyMjA5MH0.FtbiB6J5eJpINYkwZleRmRdpjpEDvfISuBahIayJS1g';
+    const LINE_AUTH_URL     = SUPABASE_URL + '/functions/v1/line-auth';
+
+    // テストLIFF ID。発行後ここに記入してpushするか、空のままなら
+    // ページ上の入力欄から保存できる（localStorage 'test_liff_id'）。
+    const TEST_LIFF_ID = '';
+
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ============================================================
+    // 画面ユーティリティ
+    // ============================================================
+    function log(msg, cls) {
+      const el = document.getElementById('log');
+      const time = new Date().toTimeString().slice(0, 8);
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = '[' + time + '] ' + msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function setStatus(msg, cls) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = 'status' + (cls ? ' ' + cls : '');
+    }
+
+    function fail(err) {
+      console.error(err);
+      log('エラー: ' + (err && err.message ? err.message : String(err)), 'err');
+      setStatus('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+    }
+
+    // ============================================================
+    // LIFF ID の解決（定数 → localStorage → 手入力）
+    // ============================================================
+    function resolveLiffId() {
+      if (TEST_LIFF_ID) return TEST_LIFF_ID;
+      const stored = localStorage.getItem('test_liff_id');
+      if (stored) return stored;
+      return null;
+    }
+
+    function saveLiffId() {
+      const v = document.getElementById('liffid-input').value.trim();
+      if (!/^\d+-\w+$/.test(v)) {
+        alert('LIFF IDの形式が正しくありません（例: 2010000154-xxxxxxxx）');
+        return;
+      }
+      localStorage.setItem('test_liff_id', v);
+      document.getElementById('liffid-setup').style.display = 'none';
+      log('LIFF IDを保存しました: ' + v);
+      main();
+    }
+
+    // ============================================================
+    // メインフロー
+    // ============================================================
+    async function main() {
+      try {
+        const liffId = resolveLiffId();
+        if (!liffId) {
+          setStatus('テストLIFF IDを入力してください');
+          document.getElementById('liffid-setup').style.display = '';
+          return;
+        }
+
+        log('liff.init 開始 (liffId=' + liffId + ')');
+        setStatus('LIFF初期化中…');
+        await liff.init({ liffId: liffId });
+        log('liff.init 成功', 'ok');
+
+        if (!liff.isLoggedIn()) {
+          log('未ログイン → liff.login() でリダイレクトします');
+          liff.login();
+          return;
+        }
+        log('LINEログイン済み', 'ok');
+
+        // 既存のSupabaseセッションがあれば line-auth をスキップ
+        setStatus('セッション確認中…');
+        const { data: { session }, error: sessErr } = await db.auth.getSession();
+        if (sessErr) log('getSession エラー: ' + sessErr.message, 'err');
+
+        if (session) {
+          log('既存セッションあり (user=' + session.user.id.slice(0, 8) + '…) → line-authをスキップ', 'ok');
+          const shown = await showMe();
+          if (shown) return;
+          // セッションはあるがDBが読めない（失効など）→ 作り直す
+          log('既存セッションでのDB読み取りに失敗 → 再ログインします', 'err');
+          await db.auth.signOut();
+        } else {
+          log('既存セッションなし');
+        }
+
+        await loginViaLineAuth();
+
+      } catch (err) {
+        fail(err);
+      }
+    }
+
+    // ============================================================
+    // line-auth Edge Function 呼び出し
+    // ============================================================
+    async function callLineAuth(payload) {
+      const res = await fetch(LINE_AUTH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      let body;
+      try {
+        body = await res.json();
+      } catch (e) {
+        throw new Error('line-auth応答のJSON解析に失敗 (HTTP ' + res.status + ')');
+      }
+      log('line-auth(' + payload.action + ') HTTP ' + res.status + ' status=' + body.status);
+      return { http: res.status, body: body };
+    }
+
+    async function loginViaLineAuth() {
+      setStatus('LINE認証中…');
+
+      const idToken = liff.getIDToken();
+      if (!idToken) {
+        throw new Error('IDトークンを取得できませんでした。LIFFのScopeに openid が含まれているか確認してください。');
+      }
+      log('IDトークン取得OK (長さ=' + idToken.length + ')', 'ok');
+
+      const { http, body } = await callLineAuth({ action: 'login', idToken: idToken });
+
+      if (body.status === 'ok') {
+        await establishSession(body);
+      } else if (body.status === 'need_registration') {
+        log('未連携 → 候補 ' + (body.candidates ? body.candidates.length : 0) + '名を表示', 'ok');
+        renderCandidates(body.candidates || []);
+      } else {
+        throw new Error('line-auth失敗 (HTTP ' + http + ', code=' + body.code + '): ' + body.message);
+      }
+    }
+
+    // ============================================================
+    // 初回登録（候補から名前を選ぶ）
+    // ============================================================
+    function renderCandidates(candidates) {
+      setStatus('初回登録: お名前を選んでください');
+      const wrap = document.getElementById('candidates');
+      const list = document.getElementById('candidates-list');
+      list.innerHTML = '';
+      if (candidates.length === 0) {
+        list.innerHTML = '<div class="card">選択できる候補がありません。管理者に連絡してください。</div>';
+      }
+      candidates.forEach(function (c) {
+        const btn = document.createElement('button');
+        btn.textContent = c.display_name;
+        btn.onclick = function () { registerProfile(c); };
+        list.appendChild(btn);
+      });
+      wrap.style.display = '';
+    }
+
+    async function registerProfile(candidate) {
+      try {
+        if (!confirm(candidate.display_name + ' さんで登録します。よろしいですか？')) return;
+
+        setStatus('登録中…');
+        document.getElementById('candidates').style.display = 'none';
+
+        const idToken = liff.getIDToken();
+        if (!idToken) throw new Error('IDトークンを取得できませんでした');
+
+        const { http, body } = await callLineAuth({
+          action: 'register',
+          idToken: idToken,
+          profileId: candidate.id
+        });
+
+        if (body.status === 'ok') {
+          log('登録成功: ' + body.display_name, 'ok');
+          await establishSession(body);
+        } else if (http === 409 && body.code === 'name_already_taken') {
+          alert('その名前はすでに他のアカウントと連携されています。\n候補一覧を再取得します。');
+          log('name_already_taken → 候補を再取得', 'err');
+          await loginViaLineAuth();
+        } else {
+          throw new Error('登録失敗 (HTTP ' + http + ', code=' + body.code + '): ' + body.message);
+        }
+      } catch (err) {
+        fail(err);
+      }
+    }
+
+    // ============================================================
+    // token_hash → Supabaseセッション確立 → 自分の情報を表示
+    // ============================================================
+    async function establishSession(authResult) {
+      setStatus('セッション確立中…');
+      log('verifyOtp(magiclink) 実行中…');
+
+      const { data, error } = await db.auth.verifyOtp({
+        type: 'magiclink',
+        token_hash: authResult.token_hash
+      });
+      if (error) throw new Error('verifyOtp失敗: ' + error.message);
+
+      log('セッション確立成功 (user=' + data.user.id.slice(0, 8) + '…)', 'ok');
+      const shown = await showMe();
+      if (!shown) throw new Error('セッションは確立しましたが、DBの読み取りに失敗しました');
+    }
+
+    /**
+     * RLS越しに profiles / store_members / stores を読んで表示する。
+     * @returns {boolean} 表示まで成功したら true
+     */
+    async function showMe() {
+      setStatus('DB読み取り中…');
+
+      const profRes = await db.from('profiles').select('id, display_name, line_user_id');
+      if (profRes.error) { log('profiles読み取りエラー: ' + profRes.error.message, 'err'); return false; }
+      log('profiles: ' + JSON.stringify(profRes.data));
+      const me = (profRes.data || [])[0];
+      if (!me) { log('profilesが空です（RLSで自分の行が見えていない可能性）', 'err'); return false; }
+
+      const memRes = await db.from('store_members').select('store_id, role, member_code, status');
+      if (memRes.error) { log('store_members読み取りエラー: ' + memRes.error.message, 'err'); return false; }
+      log('store_members: ' + JSON.stringify(memRes.data));
+
+      const storeRes = await db.from('stores').select('id, name');
+      if (storeRes.error) { log('stores読み取りエラー: ' + storeRes.error.message, 'err'); return false; }
+      log('stores: ' + JSON.stringify(storeRes.data));
+
+      const storeName = {};
+      (storeRes.data || []).forEach(function (s) { storeName[s.id] = s.name; });
+
+      const memberCards = (memRes.data || []).map(function (m) {
+        return '<div class="card">' +
+          '<div class="label">所属店舗</div>' +
+          '<div><strong>' + (storeName[m.store_id] || m.store_id) + '</strong>' +
+          ' / role: <strong>' + m.role + '</strong>' +
+          ' / ' + (m.member_code || '') +
+          ' / ' + (m.status || '') + '</div>' +
+        '</div>';
+      }).join('');
+
+      document.getElementById('result').innerHTML =
+        '<h2>プロフィール</h2>' +
+        '<div class="card">' +
+          '<div class="label">display_name</div>' +
+          '<div><strong>' + me.display_name + '</strong></div>' +
+        '</div>' +
+        '<h2>所属（store_members）</h2>' +
+        (memberCards || '<div class="card">所属情報がありません</div>');
+
+      document.getElementById('actions').style.display = '';
+      setStatus('✅ ログイン成功: ' + me.display_name + ' さん', 'ok');
+      log('=== ステップ1 完了 ===', 'ok');
+      return true;
+    }
+
+    // ============================================================
+    // デバッグ用: セッション破棄して最初から
+    // ============================================================
+    async function reLogin() {
+      log('signOut → 再ログイン');
+      await db.auth.signOut();
+      document.getElementById('result').innerHTML = '';
+      document.getElementById('actions').style.display = 'none';
+      main();
+    }
+
+    document.addEventListener('DOMContentLoaded', main);
+  </script>
+</body>
+</html>
