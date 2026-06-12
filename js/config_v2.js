@@ -13,6 +13,6 @@ const CONFIG_V2 = {
   // LINE IDトークン検証＋Supabaseセッション発行を行うEdge Function
   LINE_AUTH_URL: 'https://nlyzzrglnqmcsbvcwiav.supabase.co/functions/v1/line-auth',
 
-  // テストLIFF ID。本番切替時は 2010000154-reMsR638 に変更する。
-  LIFF_ID: '2010000154-2C3b8v2x'
+  // 本番LIFF ID。テストに戻すときは 2010000154-2C3b8v2x に変更する。
+  LIFF_ID: '2010000154-reMsR638'
 };
