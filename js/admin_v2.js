@@ -647,7 +647,12 @@ async function initApp() {
 
     const nameEl = document.getElementById('admin-member-name');
     if (nameEl) nameEl.textContent = AdminState.displayName || '';
-    AdminPeriods.init();
+
+    // アレグリア運用ではこのページはメンバー管理専用として使う。
+    // 期間一覧→たたき台編集（AdminPeriods / DraftEditor）はシフトを
+    // スプレッドシートで組む運用のため出番がなく、商品化用に温存している。
+    // 再表示する場合はここを AdminPeriods.init() に戻す。
+    MemberManager.open();
 
   } catch (err) {
     console.error('[initApp] 起動エラー:', err);

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#06C755">
-  <title>アレグリア シフト作成（店長）</title>
+  <title>アレグリア メンバー管理（店長）</title>
   <link rel="stylesheet" href="css/style.css?v=20260603-close-window">
   <style>
     /* ===== 店長ツール専用スタイル（style.cssは変更しない） ===== */
@@ -124,11 +124,12 @@
   <!-- 画面1: ローディング -->
   <section id="screen-loading" class="screen active">
     <p class="loading-logo">アレグリア</p>
-    <p class="loading-sub">シフト作成（店長用）</p>
+    <p class="loading-sub">メンバー管理（店長用）</p>
     <div class="spinner" role="status" aria-label="読み込み中"></div>
   </section>
 
-  <!-- 画面2: 期間選択 -->
+  <!-- 画面2: 期間選択（アレグリア運用では未使用・商品化用に温存。
+       起動時は直接メンバー管理画面へ遷移する） -->
   <section id="screen-period-list" class="screen">
     <header class="screen-header">
       <h1>シフト作成</h1>
@@ -177,7 +178,7 @@
       <!-- 退職者（トグルONのときだけ表示） -->
       <div id="member-list-retired" style="display:none"></div>
 
-      <button class="btn-secondary mt-16" onclick="AdminPeriods.init()">期間一覧へ戻る</button>
+      <button class="btn-secondary mt-16" onclick="location.href='submit-v2.html'">アプリのホームへ戻る</button>
     </div>
   </section>
 
@@ -249,7 +250,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260614-v7"></script>
-  <script src="js/admin_v2.js?v=20260614-v7"></script>
+  <script src="js/admin_v2.js?v=20260614-v8"></script>
 
 </body>
 </html>

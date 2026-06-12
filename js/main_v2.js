@@ -340,6 +340,10 @@ const Home = {
     if (manageBtn) {
       manageBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
     }
+    const membersBtn = document.getElementById('home-members-btn');
+    if (membersBtn) {
+      membersBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
+    }
     showScreen('home');
   },
 
