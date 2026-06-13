@@ -211,6 +211,7 @@ const Confirmation = {
     if (warningEl) warningEl.style.display = isOverDeadline ? '' : 'none';
 
     this._renderShiftList(shifts);
+    this._clearError();
     this._setSubmitting(false);
   },
 
@@ -254,6 +255,7 @@ const Confirmation = {
 
   async onSubmit() {
     if (this.isSubmitting) return;
+    this._clearError();
     this._setSubmitting(true);
 
     try {
@@ -263,15 +265,36 @@ const Confirmation = {
       // false=不一致（異常）/ null=確認不能（送信成功は信じる）/ true=確認OK
       const verified = await SupaAPI.verifySubmission(this.currentPeriod.id, this.shifts.length);
       if (verified === false) {
-        throw new Error('保存後の確認で提出内容が一致しませんでした。お手数ですが、もう一度提出してください。');
+        throw new Error('保存後の確認で提出内容が一致しませんでした。');
       }
 
       showScreen('complete');
 
     } catch (err) {
-      alert('提出に失敗しました。もう一度お試しください。\n' + err.message);
+      // 失敗は画面内の赤バナーで知らせる（alert廃止）。送信ボタンは再有効化され、
+      // 下の「提出する ✓」をもう一度押せば再提出（upsertで冪等）。
       console.error('[Confirmation] submitShift:', err);
+      this._showError(
+        '提出に失敗しました。通信状態を確認して、下の「提出する ✓」をもう一度押してください。\n' +
+        err.message
+      );
       this._setSubmitting(false);
+    }
+  },
+
+  _showError(message) {
+    const el = document.getElementById('confirm-error');
+    if (!el) return;
+    el.textContent = message;
+    el.style.display = '';
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
+
+  _clearError() {
+    const el = document.getElementById('confirm-error');
+    if (el) {
+      el.textContent = '';
+      el.style.display = 'none';
     }
   },
 

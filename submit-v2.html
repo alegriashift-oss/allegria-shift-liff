@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#06C755">
   <title>アレグリア シフト提出</title>
-  <link rel="stylesheet" href="css/style.css?v=20260603-close-window">
+  <link rel="stylesheet" href="css/style.css?v=20260614-error-banner">
 </head>
 <body>
 
@@ -236,6 +236,9 @@
       <!-- シフト一覧（Confirmation.init() が描画） -->
       <div id="confirm-shift-list" class="confirm-shift-list"></div>
 
+      <!-- 提出失敗時のエラー表示（赤バナー。下の「提出する」を再度押すと再提出） -->
+      <div id="confirm-error" class="error-banner" style="display:none"></div>
+
       <!-- アクションボタン -->
       <div class="confirm-actions">
         <button
@@ -346,7 +349,7 @@
   <script src="js/history_v2.js?v=20260613-v2"></script>
   <script src="js/published_v2.js?v=20260613-v5"></script>
   <script src="js/manager_v2.js?v=20260613-v6"></script>
-  <script src="js/main_v2.js?v=20260614-v10-verify"></script>
+  <script src="js/main_v2.js?v=20260614-v11-error-banner"></script>
 
 </body>
 </html>
