@@ -167,9 +167,22 @@ const PeriodSelector = {
       Calendar.init(period, result.shifts || []);
 
     } catch (err) {
-      // 取得失敗でも空のカレンダーで続行（初回提出の場合は正常）
-      console.warn('[PeriodSelector] getMyShifts failed, continuing empty:', err);
-      Calendar.init(period, []);
+      // 取得失敗で空カレンダーを出すと、既に提出済みの人が気づかぬまま
+      // 部分入力で上書き提出してしまう恐れがある（提出は洗い替え方式）。
+      // そのため空で続行せず中断し、再読み込みを促す。
+      console.error('[PeriodSelector] getMyShifts failed, aborting to avoid overwrite:', err);
+
+      const confirmBtn = document.getElementById('btn-go-to-confirm');
+      const toolbar    = document.getElementById('calendar-toolbar');
+      if (confirmBtn) confirmBtn.style.display = 'none';
+      if (toolbar)    toolbar.style.display    = 'none';
+
+      document.getElementById('calendar-cards-container').innerHTML = `
+        <p class="error-text">提出済みのシフトを読み込めませんでした。<br>
+        通信状態を確認して、もう一度お試しください。</p>
+        <p class="info-text">このまま入力すると前回の提出を上書きしてしまう恐れがあるため、いったん中断しました。</p>
+        <button class="btn-secondary mt-12" onclick="PeriodSelector.onSelect(${index})">再読み込み</button>
+      `;
     }
   }
 
@@ -245,6 +258,14 @@ const Confirmation = {
 
     try {
       await SupaAPI.submitShift(this.currentPeriod, this.shifts);
+
+      // 念のためDBから読み戻し、保存件数を照合してから完了表示。
+      // false=不一致（異常）/ null=確認不能（送信成功は信じる）/ true=確認OK
+      const verified = await SupaAPI.verifySubmission(this.currentPeriod.id, this.shifts.length);
+      if (verified === false) {
+        throw new Error('保存後の確認で提出内容が一致しませんでした。お手数ですが、もう一度提出してください。');
+      }
+
       showScreen('complete');
 
     } catch (err) {

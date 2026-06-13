@@ -224,50 +224,54 @@ const SupaAPI = {
   },
 
   /**
-   * シフト提出（upsert + 明細洗い替え）
-   * 1. submissions を upsert（onConflict: period_id,user_id）
-   * 2. その submission_id の明細を全削除
-   * 3. 新しい明細を一括insert
+   * シフト提出（DB側RPC submit_shift で1トランザクション保存）
+   *
+   * 以前はクライアントが submissions upsert → 明細全削除 → 明細insert の
+   * 3リクエストに分けていたため、insertだけ失敗すると「submissions行は
+   * submitted のまま明細が空」という抜け殻提出が残り得た。submit_shift は
+   * この3手順を1関数（1トランザクション）にまとめ、途中失敗なら全部ロール
+   * バックする。shift_type の判定はクライアント側に残し、確定済みの items を
+   * JSONで渡す。RPCは SECURITY INVOKER なので既存RLSがそのまま効く。
    * @param {Object} period - {id, storeId, ...}（main_v2の期間VM）
    * @param {Array}  shifts - [{date, available, start, end}]
    */
   async submitShift(period, shifts) {
-    const uid = this.user.id;
-    const now = new Date().toISOString();
-
-    const up = await this.db.from('submissions')
-      .upsert({
-        store_id    : period.storeId,
-        user_id     : uid,
-        period_id   : period.id,
-        status      : 'submitted',
-        submitted_at: now,
-        updated_at  : now
-      }, { onConflict: 'period_id,user_id' })
-      .select('id')
-      .single();
-    if (up.error) throw new Error('提出の保存に失敗しました: ' + up.error.message);
-    const submissionId = up.data.id;
-
-    const del = await this.db.from('submission_items')
-      .delete()
-      .eq('submission_id', submissionId);
-    if (del.error) throw new Error('既存明細の削除に失敗しました: ' + del.error.message);
-
-    const rows = shifts.map(s => ({
-      submission_id: submissionId,
-      work_date    : s.date,
-      shift_type   : this.shiftTypeOf(s),
-      start_time   : s.available ? s.start : null,
-      end_time     : s.available ? s.end   : null,
-      note         : null
+    const items = shifts.map(s => ({
+      work_date : s.date,
+      shift_type: this.shiftTypeOf(s),
+      start_time: s.available ? s.start : null,
+      end_time  : s.available ? s.end   : null,
+      note      : null
     }));
-    if (rows.length) {
-      const ins = await this.db.from('submission_items').insert(rows);
-      if (ins.error) throw new Error('明細の保存に失敗しました: ' + ins.error.message);
-    }
 
-    return { submissionId: submissionId };
+    const res = await this.db.rpc('submit_shift', {
+      p_store_id : period.storeId,
+      p_period_id: period.id,
+      p_items    : items
+    });
+    if (res.error) throw new Error('提出の保存に失敗しました: ' + res.error.message);
+
+    return { submissionId: res.data };
+  },
+
+  /**
+   * 提出直後の念押し確認。DBから自分の提出を読み戻し、保存件数が想定と
+   * 一致するかを返す（RPC成功＝コミット保証だが、読み戻しで二重に確かめる）。
+   *   true  : 提出が存在し、件数も一致（確認OK）
+   *   false : 提出が見当たらない or 件数不一致（異常 → 再提出を促す）
+   *   null  : 読み戻し自体が失敗（通信エラー等。判定不能 → 送信成功は信じる）
+   * @param {string} periodId
+   * @param {number} expectedCount - 提出した明細数（= shifts.length）
+   */
+  async verifySubmission(periodId, expectedCount) {
+    try {
+      const result = await this.getShiftsOf(periodId, this.user.id);
+      if (!result.submissionId) return false;
+      return result.shifts.length === expectedCount;
+    } catch (err) {
+      console.warn('[verifySubmission] read-back failed, trusting write:', err);
+      return null;
+    }
   },
 
   /**
