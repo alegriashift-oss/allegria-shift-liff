@@ -503,7 +503,7 @@ const SupaAPI = {
    */
   async getStoreMembers(storeId) {
     const res = await this.db.from('store_members')
-      .select('id, user_id, display_name, member_code, role, status, sort_order')
+      .select('id, user_id, display_name, member_code, role, status, sort_order, employment_type')
       .eq('store_id', storeId)
       .in('status', ['active', 'retired'])
       .order('sort_order', { ascending: true })
@@ -526,22 +526,34 @@ const SupaAPI = {
     return rows;
   },
 
-  /** メンバーを追加（LINE未連携 = user_id NULL で作成。本人の初回ログイン時に連携される） */
-  async addStoreMember(storeId, displayName, memberCode, sortOrder) {
+  /**
+   * メンバーを追加（LINE未連携 = user_id NULL で作成。本人の初回ログイン時に連携される）。
+   * member_code は渡さない＝DBトリガーが店舗ごとの連番（M0001形式）で自動採番する。
+   * employment_type は 'part_time' / 'full_time' / 'admin'。
+   */
+  async addStoreMember(storeId, displayName, employmentType, sortOrder) {
     const res = await this.db.from('store_members')
       .insert({
-        store_id    : storeId,
-        user_id     : null,
-        display_name: displayName,
-        member_code : memberCode || null,
-        role        : 'staff',
-        status      : 'active',
-        sort_order  : sortOrder
+        store_id       : storeId,
+        user_id        : null,
+        display_name   : displayName,
+        role           : 'staff',
+        status         : 'active',
+        employment_type: employmentType || 'part_time',
+        sort_order     : sortOrder
       })
       .select('id')
       .single();
     if (res.error) throw new Error('メンバーの追加に失敗しました: ' + res.error.message);
     return res.data.id;
+  },
+
+  /** 既存メンバーの雇用区分を変更（'part_time' / 'full_time' / 'admin'） */
+  async setStoreMemberEmploymentType(memberId, employmentType) {
+    const res = await this.db.from('store_members')
+      .update({ employment_type: employmentType })
+      .eq('id', memberId);
+    if (res.error) throw new Error('雇用区分の変更に失敗しました: ' + res.error.message);
   },
 
   /** 退職にする（履歴は残る） */

@@ -115,6 +115,9 @@ const MemberManager = {
   _members    : [],     // active＋retired の全行（サーバーの並び順）
   _showRetired: false,
   _sortable   : null,   // SortableJSのインスタンス（コンテナに一度だけ付ける）
+  _addEmp     : 'part_time', // 追加フォームで選択中の雇用区分
+  _editId     : null,   // 雇用区分を編集中のメンバーID
+  _editEmp    : 'part_time', // 編集モーダルで選択中の雇用区分
 
   /** 期間選択画面の「メンバー管理」ボタンから入る */
   open() {
@@ -208,11 +211,22 @@ const MemberManager = {
     }
   },
 
+  /** 雇用区分のラベルとCSSクラス */
+  _empMeta(emp) {
+    switch (emp) {
+      case 'full_time': return { label: '社員',     cls: 'ft'  };
+      case 'admin':     return { label: '管理者',   cls: 'adm' };
+      default:          return { label: 'アルバイト', cls: 'pt'  };
+    }
+  },
+
   _rowHtml(m) {
     const isRetired = m.status === 'retired';
     const isSelf = !!m.user_id && m.user_id === AdminState.userId;
     const roleBadge = (m.role === 'admin' || m.role === 'manager')
       ? '<span class="role-badge">店長</span>' : '';
+    const emp = this._empMeta(m.employment_type);
+    const empBadge = `<button type="button" class="emp-badge ${emp.cls}" onclick="MemberManager.editEmp('${m.id}')">${emp.label}</button>`;
     const linkBadge = m.user_id
       ? '<span class="link-badge linked">連携済み</span>'
       : '<span class="link-badge unlinked">LINE未連携</span>';
@@ -225,6 +239,7 @@ const MemberManager = {
       <div class="member-row${isRetired ? ' retired' : ''}" data-id="${m.id}">
         ${isRetired ? '' : '<span class="member-drag-handle" aria-label="並べ替え">≡</span>'}
         <span class="member-name">${escapeHtml(m.resolved_name)}${roleBadge}</span>
+        ${empBadge}
         ${linkBadge}
         ${action}
       </div>
@@ -245,7 +260,8 @@ const MemberManager = {
     if (!form) return;
     form.style.display = '';
     document.getElementById('member-add-name').value = '';
-    document.getElementById('member-add-code').value = '';
+    this._addEmp = 'part_time';
+    this._paintSeg('member-add-emp', this._addEmp);
     document.getElementById('member-add-name').focus();
   },
 
@@ -254,9 +270,23 @@ const MemberManager = {
     if (form) form.style.display = 'none';
   },
 
+  /** セグメントトグルの選択状態を塗り直す（data-emp が emp の1つだけ on） */
+  _paintSeg(containerId, emp) {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    box.querySelectorAll('.emp-seg-btn').forEach(b => {
+      b.classList.toggle('on', b.dataset.emp === emp);
+    });
+  },
+
+  /** 追加フォームの雇用区分を選ぶ */
+  selectAddEmp(emp) {
+    this._addEmp = emp;
+    this._paintSeg('member-add-emp', emp);
+  },
+
   async submitAdd() {
     const name = document.getElementById('member-add-name').value.trim();
-    const code = document.getElementById('member-add-code').value.trim();
     if (!name) {
       showToast('名前を入力してください');
       return;
@@ -267,13 +297,54 @@ const MemberManager = {
     try {
       const maxOrder = this._active()
         .reduce((mx, m) => Math.max(mx, m.sort_order || 0), -1);
-      await SupaAPI.addStoreMember(this._storeId, name, code || null, maxOrder + 1);
+      // member_code は渡さない（DB側で自動採番）。雇用区分を渡す。
+      await SupaAPI.addStoreMember(this._storeId, name, this._addEmp, maxOrder + 1);
       this.hideAddForm();
       showToast(name + ' さんを追加しました（LINE未連携）');
       await this.load();
     } catch (err) {
       showToast(err.message);
       console.error('[MemberManager.submitAdd]', err);
+    }
+  },
+
+  // --------------------------------------------------------
+  // 雇用区分の編集（モーダル）
+  // --------------------------------------------------------
+
+  editEmp(memberId) {
+    const m = this._members.find(x => x.id === memberId);
+    if (!m) return;
+    this._editId = memberId;
+    this._editEmp = m.employment_type || 'part_time';
+    document.getElementById('emp-edit-name').textContent = m.resolved_name;
+    this._paintSeg('emp-edit-seg', this._editEmp);
+    document.getElementById('emp-edit-modal').style.display = 'flex';
+  },
+
+  pickEditEmp(emp) {
+    this._editEmp = emp;
+    this._paintSeg('emp-edit-seg', emp);
+  },
+
+  closeEditEmp() {
+    this._editId = null;
+    const modal = document.getElementById('emp-edit-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  async saveEditEmp() {
+    if (!this._editId) return;
+    const id = this._editId;
+    const emp = this._editEmp;
+    try {
+      await SupaAPI.setStoreMemberEmploymentType(id, emp);
+      this.closeEditEmp();
+      showToast('雇用区分を変更しました');
+      await this.load();
+    } catch (err) {
+      showToast(err.message);
+      console.error('[MemberManager.saveEditEmp]', err);
     }
   },
 
