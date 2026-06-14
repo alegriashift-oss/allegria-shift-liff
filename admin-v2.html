@@ -206,7 +206,6 @@
         <div class="emp-seg" id="member-add-emp" role="group" aria-label="雇用区分">
           <button type="button" class="emp-seg-btn on" data-emp="part_time" onclick="MemberManager.selectAddEmp('part_time')">アルバイト</button>
           <button type="button" class="emp-seg-btn" data-emp="full_time" onclick="MemberManager.selectAddEmp('full_time')">社員</button>
-          <button type="button" class="emp-seg-btn" data-emp="admin" onclick="MemberManager.selectAddEmp('admin')">管理者</button>
         </div>
         <div class="member-add-actions">
           <button class="btn-secondary btn-sm" onclick="MemberManager.hideAddForm()">キャンセル</button>
@@ -285,7 +284,6 @@
       <div class="emp-seg" id="member-edit-emp-seg" role="group" aria-label="雇用区分">
         <button type="button" class="emp-seg-btn" data-emp="part_time" onclick="MemberManager.pickEditEmp('part_time')">アルバイト</button>
         <button type="button" class="emp-seg-btn" data-emp="full_time" onclick="MemberManager.pickEditEmp('full_time')">社員</button>
-        <button type="button" class="emp-seg-btn" data-emp="admin" onclick="MemberManager.pickEditEmp('admin')">管理者</button>
       </div>
 
       <!-- 役割セクション（中身は MemberManager.editMember が権限に応じて描画。
@@ -319,7 +317,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260614-v13-role"></script>
-  <script src="js/admin_v2.js?v=20260614-v11-role"></script>
+  <script src="js/admin_v2.js?v=20260615-v12-emptype2"></script>
 
 </body>
 </html>

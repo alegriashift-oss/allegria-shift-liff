@@ -219,13 +219,12 @@ const MemberManager = {
     }
   },
 
-  /** 雇用区分のラベルとCSSクラス */
+  /** 雇用区分のラベルとCSSクラス（part_time/full_time の2値。adminは役割であって雇用区分ではない） */
   _empMeta(emp) {
-    switch (emp) {
-      case 'full_time': return { label: '社員',     cls: 'ft'  };
-      case 'admin':     return { label: '管理者',   cls: 'adm' };
-      default:          return { label: 'アルバイト', cls: 'pt'  };
-    }
+    // full_time のみ社員。それ以外（part_time・想定外値）は安全側でアルバイト表示。
+    return emp === 'full_time'
+      ? { label: '社員',     cls: 'ft' }
+      : { label: 'アルバイト', cls: 'pt' };
   },
 
   _rowHtml(m) {
