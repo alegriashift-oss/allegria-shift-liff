@@ -116,8 +116,10 @@ const MemberManager = {
   _showRetired: false,
   _sortable   : null,   // SortableJSのインスタンス（コンテナに一度だけ付ける）
   _addEmp     : 'part_time', // 追加フォームで選択中の雇用区分
-  _editId     : null,   // 雇用区分を編集中のメンバーID
+  _editId     : null,   // 編集中のメンバーID
   _editEmp    : 'part_time', // 編集モーダルで選択中の雇用区分
+  _editRole   : 'staff',     // 編集モーダルで選択中の役割
+  _editOrigRole: 'staff',    // 編集を開いた時点の役割（変更検知用）
 
   /** 期間選択画面の「メンバー管理」ボタンから入る */
   open() {
@@ -140,6 +142,12 @@ const MemberManager = {
 
   _store() {
     return AdminState.managed.find(m => m.store_id === this._storeId) || null;
+  },
+
+  /** 選択中の店舗における自分の役割（'admin' / 'manager'）。= currentUserRole */
+  _currentRole() {
+    const me = AdminState.managed.find(m => m.store_id === this._storeId);
+    return me ? me.role : 'staff';
   },
 
   _active()  { return this._members.filter(m => m.status === 'active'); },
@@ -223,10 +231,11 @@ const MemberManager = {
   _rowHtml(m) {
     const isRetired = m.status === 'retired';
     const isSelf = !!m.user_id && m.user_id === AdminState.userId;
-    const roleBadge = (m.role === 'admin' || m.role === 'manager')
-      ? '<span class="role-badge">店長</span>' : '';
+    const roleBadge =
+      m.role === 'admin'   ? `<button type="button" class="role-badge admin" onclick="MemberManager.editMember('${m.id}')">管理者</button>` :
+      m.role === 'manager' ? `<button type="button" class="role-badge" onclick="MemberManager.editMember('${m.id}')">店長</button>` : '';
     const emp = this._empMeta(m.employment_type);
-    const empBadge = `<button type="button" class="emp-badge ${emp.cls}" onclick="MemberManager.editEmp('${m.id}')">${emp.label}</button>`;
+    const empBadge = `<button type="button" class="emp-badge ${emp.cls}" onclick="MemberManager.editMember('${m.id}')">${emp.label}</button>`;
     const linkBadge = m.user_id
       ? '<span class="link-badge linked">連携済み</span>'
       : '<span class="link-badge unlinked">LINE未連携</span>';
@@ -270,12 +279,13 @@ const MemberManager = {
     if (form) form.style.display = 'none';
   },
 
-  /** セグメントトグルの選択状態を塗り直す（data-emp が emp の1つだけ on） */
-  _paintSeg(containerId, emp) {
+  /** セグメントトグルの選択状態を塗り直す（data-{attr} が value の1つだけ on） */
+  _paintSeg(containerId, value, attr) {
+    attr = attr || 'emp';
     const box = document.getElementById(containerId);
     if (!box) return;
     box.querySelectorAll('.emp-seg-btn').forEach(b => {
-      b.classList.toggle('on', b.dataset.emp === emp);
+      b.classList.toggle('on', b.dataset[attr] === value);
     });
   },
 
@@ -309,42 +319,107 @@ const MemberManager = {
   },
 
   // --------------------------------------------------------
-  // 雇用区分の編集（モーダル）
+  // メンバー編集（雇用区分＋役割）モーダル
   // --------------------------------------------------------
 
-  editEmp(memberId) {
+  /** 役割の日本語ラベル */
+  _roleLabel(role) {
+    return role === 'admin' ? '管理者' : role === 'manager' ? '店長' : 'スタッフ';
+  },
+
+  /**
+   * 役割変更セクションのHTMLを権限に応じて返す（空文字＝役割UIを出さない）。
+   *   currentUserRole='admin'  : スタッフ/店長/管理者 から自由に選択
+   *   currentUserRole='manager': 対象がstaffのときだけ スタッフ/店長（昇格のみ。管理者は出さない）
+   *   自分自身                  : 出さない（自己昇格はDBでも拒否）
+   */
+  _roleControlsHtml(m) {
+    const isSelf = !!m.user_id && m.user_id === AdminState.userId;
+    if (isSelf) return '';
+    const cur = this._currentRole();
+    if (cur === 'admin') {
+      return this._roleSeg(['staff', 'manager', 'admin'], m.role);
+    }
+    if (cur === 'manager') {
+      if (m.role !== 'staff') return ''; // 店長は他の店長・管理者を降格できない
+      return this._roleSeg(['staff', 'manager'], m.role);
+    }
+    return '';
+  },
+
+  _roleSeg(roles, current) {
+    const btns = roles.map(r =>
+      `<button type="button" class="emp-seg-btn${r === current ? ' on' : ''}" data-role="${r}" onclick="MemberManager.pickEditRole('${r}')">${this._roleLabel(r)}</button>`
+    ).join('');
+    return `<div class="emp-seg" id="member-edit-role-seg" role="group" aria-label="役割">${btns}</div>`;
+  },
+
+  editMember(memberId) {
     const m = this._members.find(x => x.id === memberId);
     if (!m) return;
     this._editId = memberId;
     this._editEmp = m.employment_type || 'part_time';
-    document.getElementById('emp-edit-name').textContent = m.resolved_name;
-    this._paintSeg('emp-edit-seg', this._editEmp);
-    document.getElementById('emp-edit-modal').style.display = 'flex';
+    this._editRole = m.role || 'staff';
+    this._editOrigRole = this._editRole;
+
+    document.getElementById('member-edit-name').textContent = m.resolved_name;
+    this._paintSeg('member-edit-emp-seg', this._editEmp);
+
+    const wrap = document.getElementById('member-edit-role-wrap');
+    const controls = document.getElementById('member-edit-role-controls');
+    const html = this._roleControlsHtml(m);
+    controls.innerHTML = html;
+    wrap.style.display = html ? '' : 'none';
+
+    document.getElementById('member-edit-modal').style.display = 'flex';
   },
 
   pickEditEmp(emp) {
     this._editEmp = emp;
-    this._paintSeg('emp-edit-seg', emp);
+    this._paintSeg('member-edit-emp-seg', emp);
   },
 
-  closeEditEmp() {
+  pickEditRole(role) {
+    this._editRole = role;
+    this._paintSeg('member-edit-role-seg', role, 'role');
+  },
+
+  closeEditMember() {
     this._editId = null;
-    const modal = document.getElementById('emp-edit-modal');
+    const modal = document.getElementById('member-edit-modal');
     if (modal) modal.style.display = 'none';
   },
 
-  async saveEditEmp() {
+  async saveEditMember() {
     if (!this._editId) return;
     const id = this._editId;
-    const emp = this._editEmp;
+    const m = this._members.find(x => x.id === id);
+    if (!m) { this.closeEditMember(); return; }
+
+    const roleChanged = this._editRole !== this._editOrigRole;
+    const empChanged = this._editEmp !== (m.employment_type || 'part_time');
+
+    // 昇格は強い操作なので確認ダイアログ（D）
+    if (roleChanged && this._editRole === 'manager') {
+      if (!confirm(m.resolved_name + ' さんを店長にしますか？\n店長は自店のメンバー管理やシフト確定ができるようになります。')) return;
+    }
+    if (roleChanged && this._editRole === 'admin') {
+      if (!confirm(m.resolved_name + ' さんを管理者にしますか？\n管理者は全店の役割変更などができるようになります。')) return;
+    }
+
     try {
-      await SupaAPI.setStoreMemberEmploymentType(id, emp);
-      this.closeEditEmp();
-      showToast('雇用区分を変更しました');
+      // 役割を先に（DBガードで弾かれやすいのはこちら。失敗なら雇用区分は触らない）
+      if (roleChanged) await SupaAPI.setStoreMemberRole(id, this._editRole);
+      if (empChanged)  await SupaAPI.setStoreMemberEmploymentType(id, this._editEmp);
+      this.closeEditMember();
+      showToast('変更を保存しました');
       await this.load();
     } catch (err) {
-      showToast(err.message);
-      console.error('[MemberManager.saveEditEmp]', err);
+      // DBガードに弾かれたとき等。日本語のexceptionメッセージをそのまま見せる（C）
+      console.error('[MemberManager.saveEditMember]', err);
+      this.closeEditMember();
+      showToast(err.message, 5000);
+      await this.load();
     }
   },
 

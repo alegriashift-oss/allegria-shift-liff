@@ -102,8 +102,9 @@
     .role-badge {
       display: inline-block; margin-left: 6px; padding: 1px 6px;
       border-radius: 8px; font-size: 10px; background: #fff3df; color: #b97708;
-      vertical-align: middle;
+      vertical-align: middle; border: none; cursor: pointer;
     }
+    .role-badge.admin { background: #f0e7ff; color: #6b3fa0; }
     .link-badge {
       flex: 0 0 auto; padding: 2px 8px; border-radius: 10px;
       font-size: 11px; white-space: nowrap;
@@ -273,19 +274,30 @@
     </button>
   </section>
 
-  <!-- 雇用区分の編集モーダル（メンバー行の区分バッジをタップで開く） -->
-  <div id="emp-edit-modal" class="emp-modal" style="display:none">
+  <!-- メンバー編集モーダル（行の雇用区分／役割バッジをタップで開く）。
+       雇用区分は常に表示。役割セクションは権限・自分判定でJSが出し分ける。 -->
+  <div id="member-edit-modal" class="emp-modal" style="display:none">
     <div class="emp-modal-box">
-      <p class="emp-modal-title">雇用区分を変更</p>
-      <p class="emp-modal-name" id="emp-edit-name"></p>
-      <div class="emp-seg" id="emp-edit-seg" role="group" aria-label="雇用区分">
+      <p class="emp-modal-title">メンバーを編集</p>
+      <p class="emp-modal-name" id="member-edit-name"></p>
+
+      <p class="emp-seg-label">雇用区分</p>
+      <div class="emp-seg" id="member-edit-emp-seg" role="group" aria-label="雇用区分">
         <button type="button" class="emp-seg-btn" data-emp="part_time" onclick="MemberManager.pickEditEmp('part_time')">アルバイト</button>
         <button type="button" class="emp-seg-btn" data-emp="full_time" onclick="MemberManager.pickEditEmp('full_time')">社員</button>
         <button type="button" class="emp-seg-btn" data-emp="admin" onclick="MemberManager.pickEditEmp('admin')">管理者</button>
       </div>
+
+      <!-- 役割セクション（中身は MemberManager.editMember が権限に応じて描画。
+           出せないときは wrap ごと非表示にする） -->
+      <div id="member-edit-role-wrap" style="display:none">
+        <p class="emp-seg-label">役割</p>
+        <div id="member-edit-role-controls"></div>
+      </div>
+
       <div class="emp-modal-actions">
-        <button class="btn-secondary btn-sm" onclick="MemberManager.closeEditEmp()">キャンセル</button>
-        <button class="btn-primary btn-sm" onclick="MemberManager.saveEditEmp()">保存</button>
+        <button class="btn-secondary btn-sm" onclick="MemberManager.closeEditMember()">キャンセル</button>
+        <button class="btn-primary btn-sm" onclick="MemberManager.saveEditMember()">保存</button>
       </div>
     </div>
   </div>
@@ -306,8 +318,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
-  <script src="js/api_v2.js?v=20260614-v12-employment"></script>
-  <script src="js/admin_v2.js?v=20260614-v10-employment"></script>
+  <script src="js/api_v2.js?v=20260614-v13-role"></script>
+  <script src="js/admin_v2.js?v=20260614-v11-role"></script>
 
 </body>
 </html>

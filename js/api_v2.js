@@ -556,6 +556,18 @@ const SupaAPI = {
     if (res.error) throw new Error('雇用区分の変更に失敗しました: ' + res.error.message);
   },
 
+  /**
+   * 既存メンバーの役割を変更（'staff' / 'manager' / 'admin'）。
+   * 実際に許可されるかはDB側のガード（guard_role_change / prevent_self_escalation）が
+   * 判定し、権限外なら日本語のexceptionで弾かれる。そのメッセージをそのまま投げる。
+   */
+  async setStoreMemberRole(memberId, role) {
+    const res = await this.db.from('store_members')
+      .update({ role: role })
+      .eq('id', memberId);
+    if (res.error) throw new Error('役割の変更に失敗しました: ' + res.error.message);
+  },
+
   /** 退職にする（履歴は残る） */
   async retireStoreMember(memberId) {
     const res = await this.db.from('store_members')
