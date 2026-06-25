@@ -2,6 +2,20 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <!-- ===========================================================
+       旧アプリ（GAS版）は新アプリ submit-v2.html（Supabase版）へ一本化。
+       スタッフの提出も店長の提出状況も、すべて新アプリで行う。
+       ここで提出経路を閉じないと、旧アプリ提出が submission_history にだけ
+       残り Supabase と二重化する（過去にこれで「未提出」誤表示が発生）。
+       クエリ/ハッシュ（LIFFのstate含む）を引き継いで即リダイレクト。
+       戻したいときはこの script と下の noscript を削除すれば旧アプリに復帰する。
+  ============================================================ -->
+  <script>
+    (function () {
+      location.replace('submit-v2.html' + location.search + location.hash);
+    })();
+  </script>
+  <noscript><meta http-equiv="refresh" content="0; url=submit-v2.html"></noscript>
   <!-- スマホでの表示スケールを固定（ピンチズームで文字が大きくなるのを防ぐ） -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#06C755">
