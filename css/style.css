@@ -216,12 +216,14 @@ body {
   margin       : 6px 0 10px;
 }
 .status-submitted,
-.status-missing {
+.status-missing,
+.status-pending {
   font-size  : 0.75rem;
   font-weight: 700;
 }
 .status-submitted { color: var(--color-primary-dk); }
 .status-missing   { color: var(--color-danger); }
+.status-pending   { color: var(--color-text-sub); }
 
 /* -------- ボタン ------------------------------------------- */
 .btn-primary, .btn-secondary, .btn-danger {

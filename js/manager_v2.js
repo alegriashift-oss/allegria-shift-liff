@@ -61,7 +61,11 @@ const ManagerViewer = {
       if (!period) throw new Error('期間が選択されていません');
 
       this._members = await SupaAPI.getManageOverview(period);
-      const submittedCount = this._members.filter(member => member.submitted).length;
+      // 分母は「LINE紐付け済み（提出できる）メンバー」。仮メンバー（未紐付け）は
+      // 提出対象外なので人数カウントに入れず、別表示にする。
+      const linkedMembers = this._members.filter(member => member.linked);
+      const submittedCount = linkedMembers.filter(member => member.submitted).length;
+      const pendingCount = this._members.length - linkedMembers.length;
 
       container.innerHTML = `
         <label class="field-label" for="manage-period">対象期間</label>
@@ -72,14 +76,19 @@ const ManagerViewer = {
         <button class="btn-primary mt-12" onclick="ManagerViewer.openSheet()">
           📄 提出表（スプレッドシート）を開く
         </button>` : ''}
-        <p class="manage-summary">提出済み ${submittedCount}名 / ${this._members.length}名</p>
+        <p class="manage-summary">提出済み ${submittedCount}名 / ${linkedMembers.length}名${pendingCount ? `（LINE連携待ち ${pendingCount}名）` : ''}</p>
         <div class="manage-member-list">
-          ${this._members.map((member, index) => `
+          ${this._members.map((member, index) => {
+            const stateClass = !member.linked ? 'status-pending'
+              : member.submitted ? 'status-submitted' : 'status-missing';
+            const stateLabel = !member.linked ? 'LINE連携待ち'
+              : member.submitted ? '提出済み' : '未提出';
+            return `
             <button class="manage-member-btn" onclick="ManagerViewer.openMember(${index})">
               <span>${escapeHtml(member.name)}</span>
-              <span class="${member.submitted ? 'status-submitted' : 'status-missing'}">${member.submitted ? '提出済み' : '未提出'}</span>
-            </button>
-          `).join('')}
+              <span class="${stateClass}">${stateLabel}</span>
+            </button>`;
+          }).join('')}
         </div>
       `;
     } catch (err) {
@@ -121,6 +130,10 @@ const ManagerViewer = {
 
   async openMember(index) {
     const member = this._members[index];
+    if (member && !member.linked) {
+      showToast('このスタッフはまだLINE連携していません');
+      return;
+    }
     if (!member || !member.submitted) {
       showToast('このスタッフはまだ提出していません');
       return;

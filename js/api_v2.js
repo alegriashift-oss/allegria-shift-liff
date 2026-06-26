@@ -326,19 +326,26 @@ const SupaAPI = {
    */
   async getManageOverview(period) {
     const mem = await this.db.from('store_members')
-      .select('user_id, member_code')
+      .select('user_id, member_code, display_name')
       .eq('store_id', period.storeId)
       .eq('status', 'active');
     if (mem.error) throw new Error('メンバー一覧の取得に失敗しました: ' + mem.error.message);
     const members = mem.data || [];
     if (!members.length) return [];
 
-    const prof = await this.db.from('profiles')
-      .select('id, display_name')
-      .in('id', members.map(m => m.user_id));
-    if (prof.error) throw new Error('メンバー名の取得に失敗しました: ' + prof.error.message);
+    // LINE未紐付けの「仮メンバー」は user_id が NULL。NULL を uuid 照会（.in('id', …)）に
+    // 渡すと PostgreSQL の 'null'::uuid 変換エラーで画面ごと落ちるため、照会は紐付け済み
+    // （user_id 非NULL）の人だけに絞る。仮メンバーは store_members.display_name で表示する。
+    const linkedIds = members.map(m => m.user_id).filter(Boolean);
+
     const nameById = {};
-    (prof.data || []).forEach(p => { nameById[p.id] = p.display_name; });
+    if (linkedIds.length) {
+      const prof = await this.db.from('profiles')
+        .select('id, display_name')
+        .in('id', linkedIds);
+      if (prof.error) throw new Error('メンバー名の取得に失敗しました: ' + prof.error.message);
+      (prof.data || []).forEach(p => { nameById[p.id] = p.display_name; });
+    }
 
     const subs = await this.db.from('submissions')
       .select('user_id')
@@ -350,8 +357,9 @@ const SupaAPI = {
       .map(m => ({
         id        : m.user_id,
         memberCode: m.member_code || '',
-        name      : nameById[m.user_id] || '（名前未登録）',
-        submitted : submittedIds.has(m.user_id)
+        name      : nameById[m.user_id] || m.display_name || '（名前未登録）',
+        linked    : !!m.user_id,
+        submitted : !!m.user_id && submittedIds.has(m.user_id)
       }))
       .sort((a, b) =>
         a.memberCode.localeCompare(b.memberCode, 'ja', { numeric: true }) ||
