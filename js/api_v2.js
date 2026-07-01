@@ -367,6 +367,76 @@ const SupaAPI = {
   },
 
   // ============================================================
+  // 店長トップページ（manager-home.html）の提出状況集計
+  //
+  // 集計ルールは設計書追記_店長トップページ.md の確定版に従う。
+  // 分母（対象スタッフ）は role='staff' の紐付け済みメンバーのみで、
+  // 店長（manager/admin）は含めない（＝フェーズ②の店舗設定まで対象外）。
+  // データ取得3原則どおり submission_items は一覧では引かない。
+  // ============================================================
+
+  /**
+   * 指定店舗で受付中（status='open'）の期間を1件取得する（今期）。
+   * 複数openがある場合は開始日が最も早いものを今期とみなす。無ければnull。
+   */
+  async getManagerOpenPeriod(storeId) {
+    const res = await this.db.from('shift_periods')
+      .select('id, store_id, title, start_date, end_date, deadline, status')
+      .eq('store_id', storeId)
+      .eq('status', 'open')
+      .order('start_date', { ascending: true })
+      .limit(1);
+    if (res.error) throw new Error('受付中の期間の取得に失敗しました: ' + res.error.message);
+    return (res.data || [])[0] || null;
+  },
+
+  /**
+   * 提出状況の分母となる対象スタッフを取得（設計書の確定ルール）:
+   *   status='active' AND user_id IS NOT NULL AND role='staff' AND store_id=対象店
+   * 並びは sort_order 順（詳細一覧の表示順に一致）。
+   * @returns {Promise<Array<{id:string, name:string, sortOrder:number}>>}
+   */
+  async getEligibleStaff(storeId) {
+    const mem = await this.db.from('store_members')
+      .select('user_id, display_name, sort_order')
+      .eq('store_id', storeId)
+      .eq('status', 'active')
+      .eq('role', 'staff')
+      .not('user_id', 'is', null)
+      .order('sort_order', { ascending: true });
+    if (mem.error) throw new Error('対象スタッフの取得に失敗しました: ' + mem.error.message);
+    const members = mem.data || [];
+    if (!members.length) return [];
+
+    const ids = members.map(m => m.user_id);
+    const nameById = {};
+    const prof = await this.db.from('profiles')
+      .select('id, display_name')
+      .in('id', ids);
+    if (prof.error) throw new Error('スタッフ名の取得に失敗しました: ' + prof.error.message);
+    (prof.data || []).forEach(p => { nameById[p.id] = p.display_name; });
+
+    return members.map(m => ({
+      id       : m.user_id,
+      name     : nameById[m.user_id] || m.display_name || '（名前未登録）',
+      sortOrder: m.sort_order
+    }));
+  },
+
+  /**
+   * 指定期間に提出済みの user_id 集合（distinct）を返す。
+   * ここでも submission_items は引かず、submissions の user_id のみ数える。
+   * @returns {Promise<Set<string>>}
+   */
+  async getSubmittedUserIds(periodId) {
+    const subs = await this.db.from('submissions')
+      .select('user_id')
+      .eq('period_id', periodId);
+    if (subs.error) throw new Error('提出状況の取得に失敗しました: ' + subs.error.message);
+    return new Set((subs.data || []).map(s => s.user_id));
+  },
+
+  // ============================================================
   // 確定シフト（店長: たたき台編集〜確定 / スタッフ: 閲覧）
   // ============================================================
 

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a5fb4">
+  <title>アレグリア 店長メニュー</title>
+  <link rel="stylesheet" href="css/style.css?v=20260626-pending-member">
+  <style>
+    /* ===== 店長トップ専用スタイル（style.cssは変更しない） ===== */
+    .store-tabs { display: flex; gap: 8px; margin-top: 12px; }
+    .store-tab {
+      flex: 1; height: 40px; border-radius: 10px; font-size: 14px;
+      border: 1px solid rgba(255,255,255,0.6); background: rgba(255,255,255,0.12);
+      color: #fff; cursor: pointer;
+    }
+    .store-tab.on { background: #fff; border-color: #fff; color: #1a5fb4; font-weight: 700; }
+
+    .mgr-card {
+      background: #fff; border: 1px solid var(--color-border);
+      border-radius: 10px; padding: 16px; margin-bottom: 12px;
+      box-shadow: var(--shadow-card);
+    }
+    .mgr-card-title { font-size: 0.8rem; font-weight: 700; color: var(--color-text-sub); margin: 0 0 8px; }
+    .mgr-period-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 6px; }
+    .mgr-count { font-size: 0.95rem; margin: 0 0 12px; }
+    .mgr-count strong { font-size: 1.3rem; color: #1a5fb4; }
+
+    /* ガード画面（案内）はローディング/エラーと同じく中央寄せの縦積みにする */
+    #screen-not-manager.active,
+    #screen-unlinked.active { display: flex; }
+    #screen-not-manager,
+    #screen-unlinked {
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 40px 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===========================================================
+       画面1: ローディング
+  ============================================================ -->
+  <section id="screen-loading" class="screen active">
+    <p class="loading-logo">アレグリア</p>
+    <p class="loading-sub">店長メニュー</p>
+    <div class="spinner" role="status" aria-label="読み込み中"></div>
+  </section>
+
+  <!-- ===========================================================
+       画面2: 店長トップ（案A: 統合型）
+  ============================================================ -->
+  <section id="screen-home" class="screen">
+    <header class="screen-header home-header-manager">
+      <h1 id="mgr-store-name">店長メニュー</h1>
+      <p class="screen-subtitle">ログイン中: <span id="mgr-user-name"></span></p>
+      <!-- 掛け持ち店長のときだけ ManagerHome._renderHeader() が表示 -->
+      <div id="mgr-store-tabs" class="store-tabs" style="display:none"></div>
+    </header>
+    <div class="screen-body">
+
+      <!-- 提出状況カード（ManagerHome.showHome() が中身を描画） -->
+      <div id="mgr-submission-card" class="mgr-card">
+        <p class="loading-text">提出状況を読み込み中…</p>
+      </div>
+
+      <!-- メンバー管理カード -->
+      <div class="mgr-card">
+        <p class="mgr-card-title">メンバー管理</p>
+        <button class="btn-secondary" onclick="ManagerHome.openMembers()">
+          👥 メンバー管理
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===========================================================
+       画面3: 提出状況の詳細一覧
+  ============================================================ -->
+  <section id="screen-detail" class="screen">
+    <header class="screen-header home-header-manager">
+      <h1>提出状況の詳細</h1>
+      <p class="screen-subtitle" id="mgr-detail-period"></p>
+    </header>
+    <div class="screen-body">
+      <p class="manage-summary" id="mgr-detail-summary"></p>
+      <div id="mgr-detail-list" class="manage-member-list"></div>
+      <button class="btn-secondary mt-16" onclick="ManagerHome.showHome()">店長トップへ戻る</button>
+    </div>
+  </section>
+
+  <!-- ===========================================================
+       画面3b: 個別スタッフの提出明細（個別タップ時のみ取得）
+  ============================================================ -->
+  <section id="screen-member-detail" class="screen">
+    <header class="screen-header home-header-manager">
+      <h1>提出内容</h1>
+      <p class="screen-subtitle" id="mgr-member-name"></p>
+    </header>
+    <div class="screen-body">
+      <div id="mgr-member-detail-list" class="confirm-shift-list"></div>
+      <button class="btn-secondary mt-16" onclick="ManagerHome.openDetail()">一覧へ戻る</button>
+    </div>
+  </section>
+
+  <!-- ===========================================================
+       画面4: スタッフが開いたとき（店長専用ガード）
+  ============================================================ -->
+  <section id="screen-not-manager" class="screen">
+    <div class="error-icon">🔒</div>
+    <h2 class="error-title">このページは店長専用です</h2>
+    <p class="info-text">
+      シフトの提出・確認は「シフト提出」メニューからご利用ください。
+    </p>
+    <button class="btn-primary" style="max-width:280px" onclick="location.href='submit-v2.html'">
+      シフト提出へ
+    </button>
+  </section>
+
+  <!-- ===========================================================
+       画面5: 未紐付け（名前登録の案内・第2段階でコード入力を差し込む）
+  ============================================================ -->
+  <section id="screen-unlinked" class="screen">
+    <div class="error-icon">📝</div>
+    <h2 class="error-title">まず名前を登録してください</h2>
+    <p class="info-text">
+      ご利用の前に、シフト提出アプリでお名前の登録をお願いします。<br>
+      登録後、このページを開き直してください。
+    </p>
+    <button class="btn-primary" style="max-width:280px" onclick="location.href='submit-v2.html'">
+      名前を登録する
+    </button>
+  </section>
+
+  <!-- ===========================================================
+       画面6: エラー画面
+  ============================================================ -->
+  <section id="screen-error" class="screen">
+    <div class="error-icon">⚠️</div>
+    <h2 class="error-title">エラーが発生しました</h2>
+    <p id="error-message"></p>
+    <button class="btn-primary" style="max-width:280px" onclick="location.reload()">
+      再試行する
+    </button>
+  </section>
+
+  <!-- トースト通知 -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- ===========================================================
+       スクリプト読み込み順序:
+         1. LIFF SDK / supabase-js（CDN）
+         2. config_v2.js    ← CONFIG_V2
+         3. api_v2.js       ← SupaAPI
+         4. manager_home.js ← MgrState, ManagerHome, initApp
+  ============================================================ -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config_v2.js?v=20260613-v5"></script>
+  <script src="js/api_v2.js?v=20260702-v1-manager-home"></script>
+  <script src="js/manager_home.js?v=20260702-v1"></script>
+
+</body>
+</html>
