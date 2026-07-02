@@ -36,13 +36,13 @@
       width: 100%; box-sizing: border-box;
       margin: 4px 0 12px; padding: 16px 18px;
       border: none; border-radius: 12px;
-      background: #0F9D58; color: #fff; text-decoration: none;
-      box-shadow: 0 4px 14px rgba(15,157,88,0.35);
+      background: #22C55E; color: #fff; text-decoration: none;
+      box-shadow: 0 2px 8px rgba(34,197,94,0.28);
       -webkit-tap-highlight-color: transparent;
       transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
     }
-    .btn-sheet:hover  { background: #0b8043; box-shadow: 0 6px 18px rgba(15,157,88,0.45); }
-    .btn-sheet:active { transform: scale(0.98); box-shadow: 0 2px 8px rgba(15,157,88,0.35); }
+    .btn-sheet:hover  { background: #16BE55; box-shadow: 0 3px 10px rgba(34,197,94,0.34); }
+    .btn-sheet:active { transform: scale(0.98); box-shadow: 0 1px 5px rgba(34,197,94,0.28); }
     .btn-sheet-icon  { font-size: 1.5rem; line-height: 1; flex: 0 0 auto; }
     .btn-sheet-body  { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
     .btn-sheet-title { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.03em; }
@@ -82,14 +82,15 @@
     </header>
     <div class="screen-body">
 
+      <!-- シフト表を開くヒーローボタン（一番上に配置）。store に
+           spreadsheet_id/sheet_gid がそろっている店だけ
+           ManagerHome._renderSheetButton() が中身を描画する。 -->
+      <div id="mgr-sheet-card"></div>
+
       <!-- 提出状況カード（ManagerHome.showHome() が中身を描画） -->
       <div id="mgr-submission-card" class="mgr-card">
         <p class="loading-text">提出状況を読み込み中…</p>
       </div>
-
-      <!-- スプレッドシートを開くカード（store に spreadsheet_id/sheet_gid が
-           そろっている店だけ ManagerHome._renderSheetButton() が中身を描画） -->
-      <div id="mgr-sheet-card"></div>
 
       <!-- メンバー管理カード -->
       <div class="mgr-card">
