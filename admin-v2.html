@@ -174,7 +174,7 @@
     <div class="screen-body">
       <div id="admin-period-list"></div>
       <button class="btn-secondary mt-16" onclick="MemberManager.open()">👥 メンバー管理</button>
-      <button class="btn-secondary mt-12" onclick="location.href='submit-v2.html'">アプリのホームへ戻る</button>
+      <button class="btn-secondary mt-12 js-back-home" onclick="goBackHome()">アプリのホームへ戻る</button>
     </div>
   </section>
 
@@ -218,7 +218,7 @@
       <!-- 退職者（トグルONのときだけ表示） -->
       <div id="member-list-retired" style="display:none"></div>
 
-      <button class="btn-secondary mt-16" onclick="location.href='submit-v2.html'">アプリのホームへ戻る</button>
+      <button class="btn-secondary mt-16 js-back-home" onclick="goBackHome()">アプリのホームへ戻る</button>
     </div>
   </section>
 
@@ -268,7 +268,7 @@
     <h2 class="error-title">エラーが発生しました</h2>
     <p id="error-message"></p>
     <button class="btn-primary" style="max-width:280px" onclick="location.reload()">再試行する</button>
-    <button class="btn-secondary mt-12" style="max-width:280px" onclick="location.href='submit-v2.html'">
+    <button class="btn-secondary mt-12 js-back-home" style="max-width:280px" onclick="goBackHome()">
       アプリのホームへ戻る
     </button>
   </section>
@@ -317,7 +317,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260614-v13-role"></script>
-  <script src="js/admin_v2.js?v=20260615-v12-emptype2"></script>
+  <script src="js/admin_v2.js?v=20260702-v2-manager-back"></script>
 
 </body>
 </html>

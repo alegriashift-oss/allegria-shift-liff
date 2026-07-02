@@ -56,6 +56,31 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;');
 }
 
+/**
+ * 戻り先の出し分け。admin-v2.html は2経路から開かれる:
+ *   - 店長トップ(manager-home) → ?from=manager 付きで開く → 店長トップへ戻す
+ *   - 既存ホーム(submit-v2)     → from なし              → アプリのホームへ戻す
+ * 遷移元をURLパラメータで受け取り、戻るボタンの遷移先とラベルを決める。
+ * ?v= はキャッシュバスター（各HTMLを更新したら番号を上げる運用ルール）。
+ */
+function backTarget() {
+  const from = new URLSearchParams(location.search).get('from');
+  if (from === 'manager') {
+    return { url: 'manager-home.html?v=20260702-v2', label: '店長トップへ戻る' };
+  }
+  return { url: 'submit-v2.html', label: 'アプリのホームへ戻る' };
+}
+
+function goBackHome() {
+  location.href = backTarget().url;
+}
+
+/** 戻るボタン（.js-back-home）の文言を遷移元に合わせて統一する */
+function applyBackLabels() {
+  const label = backTarget().label;
+  document.querySelectorAll('.js-back-home').forEach(btn => { btn.textContent = label; });
+}
+
 /** DBの期間行 → このページで使うVM */
 function adminPeriodVM(p) {
   const membership = AdminState.managed.find(m => m.store_id === p.store_id);
@@ -810,5 +835,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
   const loadingScreen = document.getElementById('screen-loading');
   if (loadingScreen) loadingScreen.classList.add('active');
+  applyBackLabels();
   initApp();
 });

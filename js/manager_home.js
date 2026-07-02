@@ -153,9 +153,13 @@ const ManagerHome = {
     }
   },
 
-  /** 「👥 メンバー管理」→ 既存 admin-v2.html へ（?v= はキャッシュバスター） */
+  /**
+   * 「👥 メンバー管理」→ 既存 admin-v2.html へ。
+   * from=manager を渡すと、admin-v2 側の戻るボタンが「店長トップへ戻る」になり
+   * ここ（manager-home）へ戻る。?v= はキャッシュバスター。
+   */
   openMembers() {
-    location.href = 'admin-v2.html?v=20260615-v12';
+    location.href = 'admin-v2.html?v=20260702-v2&from=manager';
   },
 
   // --------------------------------------------------------
