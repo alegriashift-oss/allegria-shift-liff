@@ -26,19 +26,28 @@
     .mgr-count { font-size: 0.95rem; margin: 0 0 12px; }
     .mgr-count strong { font-size: 1.3rem; color: #1a5fb4; }
 
-    /* 「スプレッドシートを開く」緑ボタン（style.cssのbtn-*と同じ寸法・流儀に合わせる。
-       <a>要素なので text-decoration:none と box-sizing を明示） */
+    /* 「シフト表を開く」ヒーローボタン。
+       他の2ボタン（緑の詳細・白のメンバー管理）と差別化するため、
+       カード枠を持たず単独で浮かせる主役ボタンにする。
+       鮮やかなスプレッドシート系グリーン＋緑がかった影で存在感を出す。
+       style.css は変更しない（このページ内スコープで完結）。 */
     .btn-sheet {
-      display: block; width: 100%; padding: 14px 16px; border: none;
-      border-radius: var(--radius-btn); font-size: 1rem; font-weight: 600;
-      cursor: pointer; text-align: center; text-decoration: none;
-      letter-spacing: 0.03em; box-sizing: border-box;
+      display: flex; align-items: center; gap: 12px;
+      width: 100%; box-sizing: border-box;
+      margin: 4px 0 12px; padding: 16px 18px;
+      border: none; border-radius: 12px;
+      background: #0F9D58; color: #fff; text-decoration: none;
+      box-shadow: 0 4px 14px rgba(15,157,88,0.35);
       -webkit-tap-highlight-color: transparent;
-      transition: background 0.15s, transform 0.1s;
-      background: #22a45d; color: #fff;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
     }
-    .btn-sheet:hover  { background: #1c8a4e; }
-    .btn-sheet:active { transform: scale(0.97); }
+    .btn-sheet:hover  { background: #0b8043; box-shadow: 0 6px 18px rgba(15,157,88,0.45); }
+    .btn-sheet:active { transform: scale(0.98); box-shadow: 0 2px 8px rgba(15,157,88,0.35); }
+    .btn-sheet-icon  { font-size: 1.5rem; line-height: 1; flex: 0 0 auto; }
+    .btn-sheet-body  { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+    .btn-sheet-title { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.03em; }
+    .btn-sheet-sub   { font-size: 0.75rem; opacity: 0.85; margin-top: 2px; }
+    .btn-sheet-arrow { font-size: 1.1rem; flex: 0 0 auto; opacity: 0.9; }
 
     /* ガード画面（案内）はローディング/エラーと同じく中央寄せの縦積みにする */
     #screen-not-manager.active,
@@ -177,7 +186,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260703-v2-sheet"></script>
-  <script src="js/manager_home.js?v=20260703-v2-sheet"></script>
+  <script src="js/manager_home.js?v=20260703-v3-sheet"></script>
 
 </body>
 </html>

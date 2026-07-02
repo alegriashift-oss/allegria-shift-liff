@@ -130,13 +130,16 @@ const ManagerHome = {
 
     const url = 'https://docs.google.com/spreadsheets/d/'
       + encodeURIComponent(sid) + '/edit#gid=' + encodeURIComponent(gid);
+    // カード枠を持たない単独のヒーローボタン（他の2ボタンと差別化）。
     holder.innerHTML = `
-      <div class="mgr-card">
-        <p class="mgr-card-title">シフト表</p>
-        <a class="btn-sheet" href="${url}" target="_blank" rel="noopener">
-          📊 スプレッドシートを開く
-        </a>
-      </div>`;
+      <a class="btn-sheet" href="${url}" target="_blank" rel="noopener">
+        <span class="btn-sheet-icon" aria-hidden="true">📊</span>
+        <span class="btn-sheet-body">
+          <span class="btn-sheet-title">シフト表を開く</span>
+          <span class="btn-sheet-sub">Googleスプレッドシート</span>
+        </span>
+        <span class="btn-sheet-arrow" aria-hidden="true">↗</span>
+      </a>`;
   },
 
   /** ホーム画面（提出状況カード＋メンバー管理カード）を描画 */
