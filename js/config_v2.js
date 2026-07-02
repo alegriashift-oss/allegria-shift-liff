@@ -19,7 +19,7 @@ const CONFIG_V2 = {
   // GAS WebアプリURL（既存の /exec デプロイURL）。手動シート更新FABが叩く。
   // ※GASを「既存デプロイの更新」で再デプロイすればURLは不変。もし現行と異なれば
   //   GASの「デプロイを管理」に表示される実URLへ差し替えること。
-  GAS_WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbxxnDxCe0CDHFj1GIPzgtwxEMwkqIG0jrGcfuO4ZxNDv6OcGmephB3gWMxySNfTZ2sV/exec',
+  GAS_WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbxV0HTv3NKc6QDNsMOby9cFIqhAJ_9g675Wc93MuUfYA4C1yK4jfg0KRfteFzFHQ5Ppfw/exec',
 
   // 手動同期の軽量シークレット（GASのスクリプトプロパティ MANUAL_SYNC_SECRET と一致させる）。
   // これは「公開URLの空打ち防止」の軽い鍵。漏れても被害は同期が1回走る程度で、

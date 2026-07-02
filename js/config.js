@@ -5,7 +5,7 @@
  */
 const CONFIG = {
   // Google Apps Script のデプロイURL（doGet / doPost を受け付けるエンドポイント）
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbxxnDxCe0CDHFj1GIPzgtwxEMwkqIG0jrGcfuO4ZxNDv6OcGmephB3gWMxySNfTZ2sV/exec',
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbxV0HTv3NKc6QDNsMOby9cFIqhAJ_9g675Wc93MuUfYA4C1yK4jfg0KRfteFzFHQ5Ppfw/exec',
 
   // LINE LIFF アプリのID（LINE Developers Console で取得）
   LIFF_ID: '2010000154-reMsR638',
