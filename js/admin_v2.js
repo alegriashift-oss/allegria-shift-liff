@@ -256,7 +256,7 @@ const MemberManager = {
     fab.classList.add('is-loading');
     fab.classList.remove('is-done', 'is-error');
     const orig = label.textContent;
-    label.textContent = '更新中…';
+    label.textContent = '更新中…（20〜30秒）';
 
     try {
       const r = await SupaAPI.manualSheetSync(storeKey);
