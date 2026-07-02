@@ -153,6 +153,46 @@
     .emp-modal-name { font-size: 14px; color: #666; margin: 0 0 12px; }
     .emp-modal-actions { display: flex; gap: 8px; }
     .emp-modal-actions button { flex: 1; }
+
+    /* 手動シート更新FAB（右下固定）。メンバー管理表示中かつ店長のときだけ表示。 */
+    .sheet-sync-fab {
+      position: fixed;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom)); /* iPhoneのホームバー対応 */
+      z-index: 1000;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border: none;
+      border-radius: 999px;
+      background: #06C755;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      box-shadow: 0 4px 12px rgba(0,0,0,.22);
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .sheet-sync-fab:active { transform: scale(.96); }
+    .sheet-sync-fab[disabled] { opacity: .6; cursor: default; }
+    .sheet-sync-fab .ssf-icon { font-size: 18px; line-height: 1; }
+    .sheet-sync-fab.is-loading .ssf-icon { animation: ssf-spin 1s linear infinite; }
+    .sheet-sync-fab.is-done { background: #06C755; }
+    .sheet-sync-fab.is-error { background: #d9534f; }
+    @keyframes ssf-spin { to { transform: rotate(360deg); } }
+
+    .sheet-sync-meta {
+      position: fixed;
+      right: 18px;
+      bottom: calc(64px + env(safe-area-inset-bottom));
+      z-index: 1000;
+      font-size: 11px;
+      color: #888;
+      background: rgba(255,255,255,.9);
+      padding: 2px 8px;
+      border-radius: 8px;
+    }
   </style>
 </head>
 <body>
@@ -303,6 +343,14 @@
   <!-- トースト通知 -->
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <!-- 手動シート更新FAB。メンバー管理表示中かつ店長のときだけ表示する -->
+  <button id="sheet-sync-fab" class="sheet-sync-fab" style="display:none"
+          onclick="MemberManager.manualSync()">
+    <span class="ssf-icon">⟳</span>
+    <span class="ssf-label">シートを更新</span>
+  </button>
+  <div id="sheet-sync-meta" class="sheet-sync-meta" style="display:none"></div>
+
   <!-- ===========================================================
        スクリプト読み込み順序:
          1. LIFF SDK / supabase-js / SortableJS（CDN）
@@ -316,8 +364,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
-  <script src="js/api_v2.js?v=20260614-v13-role"></script>
-  <script src="js/admin_v2.js?v=20260702-v2-manager-back"></script>
+  <script src="js/api_v2.js?v=20260703-v14-sync-fab"></script>
+  <script src="js/admin_v2.js?v=20260703-v3-sync-fab"></script>
 
 </body>
 </html>

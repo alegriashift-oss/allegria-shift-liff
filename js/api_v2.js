@@ -136,9 +136,10 @@ const SupaAPI = {
     const storeInfo = {};
     if (memberships.length) {
       // spreadsheet_id / sheet_gid は manager-home の「スプレッドシートを開く」ボタン用。
+      // store_key は admin-v2 の手動シート更新FAB（GASが store_key で店を突合）用。
       // submit-v2 では未使用（無害な追加列）。
       const st = await this.db.from('stores')
-        .select('id, name, spreadsheet_id, sheet_gid')
+        .select('id, name, store_key, spreadsheet_id, sheet_gid')
         .in('id', memberships.map(m => m.store_id));
       if (st.error) throw new Error('店舗情報の取得に失敗しました: ' + st.error.message);
       (st.data || []).forEach(s => { storeInfo[s.id] = s; });
@@ -146,11 +147,34 @@ const SupaAPI = {
     memberships.forEach(m => {
       const info = storeInfo[m.store_id] || null;
       m.store_name     = info ? (info.name || '') : '';
+      m.store_key      = info ? info.store_key : null;
       m.spreadsheet_id = info ? info.spreadsheet_id : null;
       m.sheet_gid      = info ? info.sheet_gid : null;
     });
 
     return { profile: profile, memberships: memberships };
+  },
+
+  /**
+   * GASに手動シート同期を依頼する（admin-v2 のメンバー管理FABから呼ぶ）。
+   * 普段の10分同期と同じ runSupabaseSyncNow() をGAS側で1回走らせる。
+   * Content-Type を付けない＝text/plain扱いでCORSプリフライトを回避し、
+   * GAS側は e.postData.contents を素直に JSON.parse する。
+   * @param {string} storeKey 現在表示中の店舗の store_key
+   * @returns {Promise<{status:string, skipped?:boolean, synced_at?:string}>}
+   */
+  async manualSheetSync(storeKey) {
+    const res = await fetch(CONFIG_V2.GAS_WEBAPP_URL, {
+      method: 'POST',
+      // Content-Typeは付けない（text/plain扱い＝CORSプリフライト回避）
+      body: JSON.stringify({
+        action: 'manual_sync',
+        secret: CONFIG_V2.MANUAL_SYNC_SECRET,
+        store_key: storeKey
+      })
+    });
+    if (!res.ok) throw new Error('GAS応答エラー: ' + res.status);
+    return await res.json();
   },
 
   // ============================================================

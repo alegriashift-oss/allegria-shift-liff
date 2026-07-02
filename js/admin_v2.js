@@ -31,6 +31,14 @@ function showScreen(screenId) {
   } else {
     console.error('[showScreen] 存在しないスクリーン:', screenId);
   }
+  // 手動シート更新FABはメンバー管理(member-list)専用。他画面へ移ったら隠す。
+  // member-list へ入るときは MemberManager 側で _updateSyncFabVisibility() が出し直す。
+  if (screenId !== 'member-list') {
+    const fab  = document.getElementById('sheet-sync-fab');
+    const meta = document.getElementById('sheet-sync-meta');
+    if (fab)  fab.style.display  = 'none';
+    if (meta) meta.style.display = 'none';
+  }
 }
 
 function showToast(message, duration = 3000) {
@@ -162,6 +170,7 @@ const MemberManager = {
     const toggle = document.getElementById('member-show-retired');
     if (toggle) toggle.checked = this._showRetired;
     this._renderStoreTabs();
+    this._updateSyncFabVisibility();
     this.load();
   },
 
@@ -205,7 +214,85 @@ const MemberManager = {
     this._storeId = storeId;
     this.hideAddForm();
     this._renderStoreTabs();
+    this._updateSyncFabVisibility();
     this.load();
+  },
+
+  // --------------------------------------------------------
+  // 手動シート更新FAB
+  // --------------------------------------------------------
+
+  _lastSyncLabel: '',  // 「最終更新 HH:MM」用
+
+  /** 現在表示中の店舗の store_key を返す。無ければ null。 */
+  _currentStoreKey() {
+    const store = this._store();      // AdminState.managed の該当行（store_key を含む）
+    return (store && store.store_key) || null;
+  },
+
+  /** FABの表示可否を判定して反映する。店長/管理者のときだけ出す。 */
+  _updateSyncFabVisibility() {
+    const fab  = document.getElementById('sheet-sync-fab');
+    const meta = document.getElementById('sheet-sync-meta');
+    if (!fab) return;
+    const role = this._currentRole();           // 'admin' / 'manager' / 'staff'
+    const show = (role === 'admin' || role === 'manager');
+    fab.style.display  = show ? 'inline-flex' : 'none';
+    if (meta) meta.style.display = (show && this._lastSyncLabel) ? 'block' : 'none';
+  },
+
+  async manualSync() {
+    const fab  = document.getElementById('sheet-sync-fab');
+    if (!fab || fab.disabled) return;
+    const label = fab.querySelector('.ssf-label');
+    const meta  = document.getElementById('sheet-sync-meta');
+
+    // 現在表示中の店舗の store_key（GASは store_key で店を突合）。
+    const storeKey = this._currentStoreKey();
+    if (!storeKey) { showToast('店舗が特定できません'); return; }
+
+    // 実行中表示（連打防止）
+    fab.disabled = true;
+    fab.classList.add('is-loading');
+    fab.classList.remove('is-done', 'is-error');
+    const orig = label.textContent;
+    label.textContent = '更新中…';
+
+    try {
+      const r = await SupaAPI.manualSheetSync(storeKey);
+      if (r.status !== 'ok') throw new Error(r.message || r.code || 'failed');
+
+      fab.classList.remove('is-loading');
+      fab.classList.add('is-done');
+      label.textContent = r.skipped ? '少し前に更新済み' : '更新しました ✓';
+
+      // 最終更新時刻を表示
+      const t = new Date();
+      this._lastSyncLabel =
+        '最終更新 ' + String(t.getHours()).padStart(2, '0') + ':' +
+        String(t.getMinutes()).padStart(2, '0');
+      if (meta) {
+        meta.textContent = this._lastSyncLabel;
+        meta.style.display = 'block';
+      }
+
+      // 数秒後に通常表示へ戻す
+      setTimeout(() => {
+        fab.classList.remove('is-done');
+        label.textContent = orig;
+        fab.disabled = false;
+      }, 2500);
+    } catch (err) {
+      console.error('[manualSync]', err);
+      fab.classList.remove('is-loading');
+      fab.classList.add('is-error');
+      label.textContent = '更新失敗・再試行';
+      fab.disabled = false;   // 失敗時はすぐ再押下できる
+      setTimeout(() => {
+        fab.classList.remove('is-error');
+        label.textContent = orig;
+      }, 3000);
+    }
   },
 
   // --------------------------------------------------------
