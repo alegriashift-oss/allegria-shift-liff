@@ -133,15 +133,22 @@ const SupaAPI = {
     if (mem.error) throw new Error('所属情報の取得に失敗しました: ' + mem.error.message);
     const memberships = mem.data || [];
 
-    const storeNames = {};
+    const storeInfo = {};
     if (memberships.length) {
+      // spreadsheet_id / sheet_gid は manager-home の「スプレッドシートを開く」ボタン用。
+      // submit-v2 では未使用（無害な追加列）。
       const st = await this.db.from('stores')
-        .select('id, name')
+        .select('id, name, spreadsheet_id, sheet_gid')
         .in('id', memberships.map(m => m.store_id));
       if (st.error) throw new Error('店舗情報の取得に失敗しました: ' + st.error.message);
-      (st.data || []).forEach(s => { storeNames[s.id] = s.name; });
+      (st.data || []).forEach(s => { storeInfo[s.id] = s; });
     }
-    memberships.forEach(m => { m.store_name = storeNames[m.store_id] || ''; });
+    memberships.forEach(m => {
+      const info = storeInfo[m.store_id] || null;
+      m.store_name     = info ? (info.name || '') : '';
+      m.spreadsheet_id = info ? info.spreadsheet_id : null;
+      m.sheet_gid      = info ? info.sheet_gid : null;
+    });
 
     return { profile: profile, memberships: memberships };
   },

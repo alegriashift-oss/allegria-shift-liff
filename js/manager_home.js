@@ -106,10 +106,44 @@ const ManagerHome = {
     this.showHome();
   },
 
+  /**
+   * 選択中の店の「スプレッドシートを開く」ボタンを描画する。
+   * spreadsheet_id と sheet_gid の両方がそろっている店だけボタンを出し、
+   * 欠ける店ではDOMごと出さない（disabledにはしない）。
+   * showHome() から毎回呼ぶので、店舗切替でリンク先も更新される。
+   */
+  _renderSheetButton() {
+    const holder = document.getElementById('mgr-sheet-card');
+    if (!holder) return;
+
+    const store = this._selectedStore();
+    const sid   = store ? store.spreadsheet_id : null;
+    const gid   = store ? store.sheet_gid      : null;
+
+    // null / undefined / 空文字は「未設定」。gid=0 は正当な値なので != null で許容。
+    const hasSid = sid != null && String(sid).trim() !== '';
+    const hasGid = gid != null && String(gid).trim() !== '';
+    if (!hasSid || !hasGid) {
+      holder.innerHTML = '';
+      return;
+    }
+
+    const url = 'https://docs.google.com/spreadsheets/d/'
+      + encodeURIComponent(sid) + '/edit#gid=' + encodeURIComponent(gid);
+    holder.innerHTML = `
+      <div class="mgr-card">
+        <p class="mgr-card-title">シフト表</p>
+        <a class="btn-sheet" href="${url}" target="_blank" rel="noopener">
+          📊 スプレッドシートを開く
+        </a>
+      </div>`;
+  },
+
   /** ホーム画面（提出状況カード＋メンバー管理カード）を描画 */
   async showHome() {
     showScreen('home');
     this._renderHeader();
+    this._renderSheetButton();
 
     const card = document.getElementById('mgr-submission-card');
     card.innerHTML = '<p class="loading-text">提出状況を読み込み中…</p>';
