@@ -5,8 +5,10 @@
  * 画面遷移・UI・操作感はGAS版と同一を維持する。
  *
  * ロード順: config_v2.js → api_v2.js → name_selector_v2.js → calendar.js
- *           → history_v2.js → manager_v2.js → main_v2.js
+ *           → history_v2.js → published_v2.js → main_v2.js
  * （calendar.js はGAS版をそのまま再利用。バックエンド依存がないため）
+ * 店長向け ManagerViewer（manager_v2.js）は店長トップ(manager-home)へ移設したため、
+ * この提出画面では読み込まない。
  */
 
 // ============================================================
@@ -368,8 +370,9 @@ async function closeApp() {
 
 const Home = {
   show() {
+    // 店長向け機能（店舗の提出状況・メンバー管理）は manager-home へ移設したため、
+    // この提出画面ホームはスタッフの提出専用。role による出し分けは持たない。
     const nameEl = document.getElementById('home-member-name');
-    const manageBtn = document.getElementById('home-manage-btn');
     const submitBtn = document.getElementById('home-submit-btn');
     const publishedBtn = document.getElementById('home-published-btn');
     if (nameEl) nameEl.textContent = AppState.displayName || '';
@@ -380,13 +383,6 @@ const Home = {
       // アレグリア運用ではシフトはExcelで管理するため非表示。
       // 商品化で確定シフト配信を使う際は AppState.store ? '' : 'none' に戻す
       publishedBtn.style.display = 'none';
-    }
-    if (manageBtn) {
-      manageBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
-    }
-    const membersBtn = document.getElementById('home-members-btn');
-    if (membersBtn) {
-      membersBtn.style.display = ManagerViewer.managedStoreIds().length ? '' : 'none';
     }
     showScreen('home');
   },
@@ -408,11 +404,6 @@ const Home = {
   openPublished() {
     showScreen('published');
     PublishedViewer.init();
-  },
-
-  openManage() {
-    showScreen('manage');
-    ManagerViewer.init();
   }
 };
 

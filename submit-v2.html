@@ -61,15 +61,8 @@
           <span class="home-action-title">確定シフトを見る</span>
           <span class="home-action-sub">店長が確定した勤務予定を確認できます</span>
         </button>
-        <button id="home-manage-btn" class="home-action-btn" style="display:none" onclick="Home.openManage()">
-          <span class="home-action-title">店舗の提出状況を見る</span>
-          <span class="home-action-sub">スタッフごとの提出内容を確認します</span>
-        </button>
-        <!-- リンクの ?v= はキャッシュバスター。admin-v2.html を更新したら番号を上げる -->
-        <button id="home-members-btn" class="home-action-btn" style="display:none" onclick="location.href='admin-v2.html?v=20260702-v2'">
-          <span class="home-action-title">メンバー管理</span>
-          <span class="home-action-sub">スタッフの追加・退職・並べ替え（店長）</span>
-        </button>
+        <!-- 店長向け機能（店舗の提出状況・メンバー管理）は manager-home（店長トップ）へ
+             集約したため、この提出画面ホームからは削除。ここはスタッフの提出専用に絞る。 -->
       </div>
     </div>
   </section>
@@ -105,25 +98,6 @@
     </header>
     <div class="screen-body">
       <div id="history-period-list"></div>
-      <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
-    </div>
-  </section>
-
-
-  <!-- ===========================================================
-       画面6: 管理者向け提出状況
-  ============================================================ -->
-  <section id="screen-manage" class="screen">
-    <header class="screen-header">
-      <h1>店舗の提出状況</h1>
-      <p class="screen-subtitle">スタッフごとの提出内容を確認できます</p>
-    </header>
-    <div class="screen-body">
-      <div id="manage-body"></div>
-      <!-- アレグリア運用ではシフト作成はExcelで行うため非表示（商品化で再表示） -->
-      <button class="btn-primary mt-16" style="display:none" onclick="location.href='admin-v2.html'">
-        シフトを作成する（たたき台 → 確定）
-      </button>
       <button class="btn-secondary mt-16" onclick="Home.show()">ホームへ戻る</button>
     </div>
   </section>
@@ -336,9 +310,10 @@
          5. calendar.js    ← Calendar（GAS版をそのまま再利用）
          6. history_v2.js  ← HistoryViewer（SupaAPI に依存）
          7. published_v2.js ← PublishedViewer（SupaAPI に依存）
-         8. manager_v2.js  ← ManagerViewer（SupaAPI に依存）
-         9. main_v2.js     ← AppState, showScreen, PeriodSelector,
+         8. main_v2.js     ← AppState, showScreen, PeriodSelector,
                              Confirmation, initApp（すべてに依存）
+       ※ 店長向けの ManagerViewer（manager_v2.js）は店長トップ(manager-home)へ
+         移設したため、この提出画面では読み込まない。
   ============================================================ -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -348,8 +323,7 @@
   <script src="js/calendar.js?v=20260531-submission-history"></script>
   <script src="js/history_v2.js?v=20260613-v2"></script>
   <script src="js/published_v2.js?v=20260613-v5"></script>
-  <script src="js/manager_v2.js?v=20260626-v8-pending"></script>
-  <script src="js/main_v2.js?v=20260614-v11-error-banner"></script>
+  <script src="js/main_v2.js?v=20260702-v3-staffhome"></script>
 
 </body>
 </html>
