@@ -255,6 +255,24 @@ const SupaAPI = {
   },
 
   /**
+   * 指定店舗の有効なシフト枠を sort_order 昇順で取得（提出画面の枠生成用）。
+   * RLS「スタッフは所属店舗の shift_slots を SELECT 可」で自店のみ見える。
+   * 数行なので行数上限の心配はない。
+   * @param {string} storeId
+   * @returns {Promise<Array<{slot_key,name,default_start,default_end,sort_order,is_active}>>}
+   */
+  async getShiftSlots(storeId) {
+    if (!storeId) return [];
+    const res = await this.db.from('shift_slots')
+      .select('slot_key, name, default_start, default_end, sort_order, is_active')
+      .eq('store_id', storeId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    if (res.error) throw new Error('シフト枠の取得に失敗しました: ' + res.error.message);
+    return res.data || [];
+  },
+
+  /**
    * シフト提出（DB側RPC submit_shift で1トランザクション保存）
    *
    * 以前はクライアントが submissions upsert → 明細全削除 → 明細insert の

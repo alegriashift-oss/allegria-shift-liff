@@ -33,11 +33,14 @@ const HistoryViewer = {
     try {
       const periodVM = toPeriodVM(entry.period);
       const result = await SupaAPI.getMyShifts(entry.period.id);
+      // 閲覧でも同じ枠でボタンを再現するため店のシフト枠を取得して渡す
+      // （0件でも Calendar 側が従来2枠にフォールバックして時刻を表示する）。
+      const slots = await SupaAPI.getShiftSlots(periodVM.storeId);
       Calendar.backAction = () => {
         showScreen('history');
         HistoryViewer.init();
       };
-      Calendar.init(periodVM, result.shifts || [], true);
+      Calendar.init(periodVM, result.shifts || [], true, slots);
     } catch (err) {
       showError(err.message);
     }

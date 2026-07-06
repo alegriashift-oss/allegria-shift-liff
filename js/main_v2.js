@@ -164,9 +164,23 @@ const PeriodSelector = {
       '<p class="loading-text">提出済みシフトを確認中…</p>';
 
     try {
-      // 提出済みシフトがあれば初期値として渡す（再編集対応）
+      // 提出済みシフトがあれば初期値として渡す（再編集対応）と、
+      // その店のシフト枠（shift_slots）を取得してカレンダーの枠を動的生成する。
       const result = await SupaAPI.getMyShifts(period.id);
-      Calendar.init(period, result.shifts || []);
+      const slots  = await SupaAPI.getShiftSlots(period.storeId);
+
+      // 枠が1つも無い店（データ不備）は提出UIを描画せず案内する。
+      if (!slots.length) {
+        const confirmBtn = document.getElementById('btn-go-to-confirm');
+        const toolbar    = document.getElementById('calendar-toolbar');
+        if (confirmBtn) confirmBtn.style.display = 'none';
+        if (toolbar)    toolbar.style.display    = 'none';
+        document.getElementById('calendar-cards-container').innerHTML =
+          '<p class="error-text">店舗の設定が未完了です。運営にご連絡ください。</p>';
+        return;
+      }
+
+      Calendar.init(period, result.shifts || [], false, slots);
 
     } catch (err) {
       // 取得失敗で空カレンダーを出すと、既に提出済みの人が気づかぬまま
