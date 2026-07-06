@@ -5,6 +5,9 @@
  * 認証は submit-v2 / admin-v2 と同じ line-auth → Supabaseセッションを流用し、
  * store_members.role で描画を出し分ける（データ保護の本体はRLS＝is_manager_of()）。
  *
+ * 2026-07 新UI: 提出状況カード最上位（ドーナツ進捗）・店舗切替カード（短縮名タブ）・
+ * シフト表は中カード・補助機能は下部リスト型。検証ページ(manager-home-v2)から昇格。
+ *
  * ロード順: config_v2.js → api_v2.js → manager_home.js
  * calendar.js には依存しない。個別スタッフの明細は confirm-item 形式で自前描画する。
  */
@@ -16,7 +19,7 @@
 const MgrState = {
   userId     : null,
   displayName: null,
-  managed    : [],    // 店長権限(admin/manager)を持つ所属 [{store_id, store_name, role, ...}]
+  managed    : [],    // 店長権限(admin/manager)を持つ所属 [{store_id, store_name, store_key, role, ...}]
   storeId    : null,  // 表示中の店舗
   period     : null,  // 表示中店舗の今期（open）VM または null
   staff      : []     // 対象スタッフ [{id, name, sortOrder, submitted}]
@@ -68,6 +71,24 @@ function formatDateLabel(dateStr) {
   return (d.getMonth() + 1) + '月' + d.getDate() + '日（' + youbi + '）';
 }
 
+/**
+ * 店舗切替タブ用の短縮表示名。
+ *   1. store_key の明示マップを最優先（例: dummy01 → テスト店）
+ *   2. 先頭のブランド名「アレグリア」と【…】注記を除去（例: アレグリア神保町 → 神保町）
+ *   3. それでも6文字を超えるなら省略記号
+ * 多店舗販売の恒久解は stores.short_name 列だが、現段階はフロント側で完結させる。
+ */
+const SHORT_STORE_NAMES = { dummy01: 'テスト店' };
+
+function shortStoreName(membership) {
+  const key = membership.store_key || '';
+  if (SHORT_STORE_NAMES[key]) return SHORT_STORE_NAMES[key];
+  let name = String(membership.store_name || '');
+  name = name.replace(/^アレグリア\s*/, '').replace(/【[^】]*】/g, '').trim();
+  if (!name) name = String(membership.store_name || '');
+  return name.length > 6 ? name.slice(0, 6) + '…' : name;
+}
+
 // ============================================================
 // 店長トップ本体
 // ============================================================
@@ -78,26 +99,32 @@ const ManagerHome = {
     return MgrState.managed.find(m => m.store_id === MgrState.storeId) || null;
   },
 
-  /** ヘッダー（店名・ログイン中ユーザー・店舗切替タブ）を描画 */
+  /** コンパクトヘッダー（店名・ログイン名のみ）を描画 */
   _renderHeader() {
     const store = this._selectedStore();
     const storeEl = document.getElementById('mgr-store-name');
     const userEl  = document.getElementById('mgr-user-name');
     if (storeEl) storeEl.textContent = store ? store.store_name : '';
     if (userEl)  userEl.textContent  = MgrState.displayName || '';
+  },
 
-    const tabs = document.getElementById('mgr-store-tabs');
-    if (!tabs) return;
-    // 掛け持ち店長のときだけ切替タブを出す
+  /** 店舗切替カード（掛け持ち店長のときだけ表示・短縮名タブ） */
+  _renderStoreSwitch() {
+    const card = document.getElementById('mgr-store-switch');
+    if (!card) return;
     if (MgrState.managed.length < 2) {
-      tabs.style.display = 'none';
+      card.style.display = 'none';
       return;
     }
-    tabs.style.display = '';
-    tabs.innerHTML = MgrState.managed.map(m => `
-      <button class="store-tab${m.store_id === MgrState.storeId ? ' on' : ''}"
-        onclick="ManagerHome.switchStore('${m.store_id}')">${escapeHtml(m.store_name)}</button>
-    `).join('');
+    card.style.display = '';
+    card.innerHTML = `
+      <p class="mgr-switch-title">🏪 店舗を切り替え</p>
+      <div class="mgr-switch-tabs">` +
+      MgrState.managed.map(m => `
+        <button class="mgr-switch-tab${m.store_id === MgrState.storeId ? ' on' : ''}"
+          onclick="ManagerHome.switchStore('${m.store_id}')">${escapeHtml(shortStoreName(m))}</button>
+      `).join('') + `
+      </div>`;
   },
 
   switchStore(storeId) {
@@ -107,8 +134,8 @@ const ManagerHome = {
   },
 
   /**
-   * 選択中の店の「スプレッドシートを開く」ボタンを描画する。
-   * spreadsheet_id と sheet_gid の両方がそろっている店だけボタンを出し、
+   * 選択中の店の「シフト表を開く」カードを描画する。
+   * spreadsheet_id と sheet_gid の両方がそろっている店だけカードを出し、
    * 欠ける店ではDOMごと出さない（disabledにはしない）。
    * showHome() から毎回呼ぶので、店舗切替でリンク先も更新される。
    */
@@ -130,22 +157,23 @@ const ManagerHome = {
 
     const url = 'https://docs.google.com/spreadsheets/d/'
       + encodeURIComponent(sid) + '/edit#gid=' + encodeURIComponent(gid);
-    // カード枠を持たない単独のヒーローボタン（他の2ボタンと差別化）。
+    // 白カード＋緑アウトラインの中ボタン（主役は提出状況カード）。
     holder.innerHTML = `
-      <a class="btn-sheet" href="${url}" target="_blank" rel="noopener">
-        <span class="btn-sheet-icon" aria-hidden="true">📊</span>
-        <span class="btn-sheet-body">
-          <span class="btn-sheet-title">シフト表を開く</span>
-          <span class="btn-sheet-sub">Googleスプレッドシート</span>
+      <div class="mgr-panel mgr-sheet-panel">
+        <span class="mgr-sheet-icon" aria-hidden="true">📊</span>
+        <span class="mgr-sheet-body">
+          <span class="mgr-sheet-title">シフト表を開く</span>
+          <span class="mgr-sheet-sub">Googleスプレッドシートで開きます</span>
         </span>
-        <span class="btn-sheet-arrow" aria-hidden="true">↗</span>
-      </a>`;
+        <a class="mgr-sheet-open" href="${url}" target="_blank" rel="noopener">開く ↗</a>
+      </div>`;
   },
 
-  /** ホーム画面（提出状況カード＋メンバー管理カード）を描画 */
+  /** ホーム画面（提出状況カードほか）を描画 */
   async showHome() {
     showScreen('home');
     this._renderHeader();
+    this._renderStoreSwitch();
     this._renderSheetButton();
 
     const card = document.getElementById('mgr-submission-card');
@@ -165,25 +193,44 @@ const ManagerHome = {
 
       const eligible  = MgrState.staff.length;
       const submitted = MgrState.staff.filter(s => s.submitted).length;
+      const missing   = eligible - submitted;
+      const pct       = eligible > 0 ? Math.round(submitted / eligible * 100) : 0;
 
       if (!period) {
         card.innerHTML = `
-          <p class="mgr-card-title">提出状況</p>
+          <div class="mgr-sub-head">
+            <p class="mgr-panel-title">📋 提出状況</p>
+          </div>
           <p class="info-text">現在、受付中の期間はありません。</p>
         `;
         return;
       }
 
       card.innerHTML = `
-        <p class="mgr-card-title">提出状況</p>
-        <p class="mgr-period-title">${escapeHtml(period.title)}</p>
-        <p class="mgr-count">提出 <strong>${submitted}</strong> / ${eligible}名</p>
+        <div class="mgr-sub-head">
+          <p class="mgr-panel-title">📋 提出状況</p>
+          <span class="mgr-period-chip">📅 ${escapeHtml(period.title)}</span>
+        </div>
+        <div class="mgr-sub-grid">
+          <div class="mgr-donut" style="--pct:${pct}">
+            <div class="mgr-donut-hole">
+              <span class="mgr-donut-num">${submitted}</span>
+              <span class="mgr-donut-den">/${eligible}名</span>
+            </div>
+          </div>
+          <div class="mgr-stats">
+            <div class="mgr-stat ok"><span class="mgr-dot"></span>提出済み<strong>${submitted}名</strong></div>
+            <div class="mgr-stat ng"><span class="mgr-dot"></span>未提出<strong>${missing}名</strong></div>
+          </div>
+        </div>
         <button class="btn-primary" onclick="ManagerHome.openDetail()">提出状況の詳細を見る</button>
       `;
     } catch (err) {
       console.error('[ManagerHome.showHome]', err);
       card.innerHTML = `
-        <p class="mgr-card-title">提出状況</p>
+        <div class="mgr-sub-head">
+          <p class="mgr-panel-title">📋 提出状況</p>
+        </div>
         <p class="error-text">${escapeHtml(err.message)}</p>
         <button class="btn-secondary" onclick="ManagerHome.showHome()">再読み込み</button>
       `;
@@ -200,7 +247,7 @@ const ManagerHome = {
   },
 
   // --------------------------------------------------------
-  // 提出状況の詳細一覧
+  // 提出状況の詳細一覧（現行と同一）
   // --------------------------------------------------------
 
   openDetail() {
@@ -281,7 +328,7 @@ const ManagerHome = {
 };
 
 // ============================================================
-// エントリーポイント
+// エントリーポイント（現行と同一）
 // ============================================================
 
 async function initApp() {
