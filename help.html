@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ウォルシフ かんたんヘルプ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#06C755; --green-dark:#05A648; --ink:#20313B; --sub:#6B7A82;
+    --bg:#EAF0EC; --bot:#FFFFFF; --user:#D9F5E4; --chipbg:#FFFFFF; --border:#D5DFD8;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:'Zen Maru Gothic','Hiragino Maru Gothic ProN','Hiragino Sans',sans-serif;
+    background:var(--bg); color:var(--ink); display:flex; flex-direction:column;
+    max-width:640px; margin:0 auto; height:100dvh;
+  }
+  header{
+    background:var(--green); color:#fff; padding:12px 16px; display:flex; align-items:center; gap:10px;
+    flex-shrink:0;
+  }
+  .avatar{
+    width:36px; height:36px; border-radius:50%; background:#fff; color:var(--green-dark);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:17px; flex-shrink:0;
+  }
+  header h1{font-size:16px; font-weight:700;}
+  header p{font-size:11px; opacity:.9;}
+
+  #chat{flex:1; overflow-y:auto; padding:14px 12px 8px; scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){ #chat{scroll-behavior:auto;} }
+
+  .msg{display:flex; margin-bottom:10px;}
+  .msg.bot{justify-content:flex-start;}
+  .msg.user{justify-content:flex-end;}
+  .bubble{
+    max-width:86%; padding:11px 14px; border-radius:16px; font-size:14px; line-height:1.75;
+    white-space:pre-line; word-break:break-word;
+  }
+  .bot .bubble{background:var(--bot); border-top-left-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,.06);}
+  .user .bubble{background:var(--user); border-top-right-radius:4px;}
+  .bubble b{color:var(--green-dark);}
+  .bubble .small{font-size:12px; color:var(--sub); display:block; margin-top:6px;}
+
+  .chips{display:flex; flex-wrap:wrap; gap:7px; margin:2px 0 12px; padding-left:4px;}
+  .chip{
+    background:var(--chipbg); border:1.5px solid var(--green); color:var(--green-dark);
+    border-radius:999px; padding:7px 14px; font-size:13px; font-weight:500; font-family:inherit;
+    cursor:pointer;
+  }
+  .chip:active{background:var(--user);}
+  .chip.cat{border-color:var(--border); color:var(--ink); font-weight:700;}
+
+  footer{
+    flex-shrink:0; background:#fff; border-top:1px solid var(--border); padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+  }
+  .catbar{display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; -webkit-overflow-scrolling:touch;}
+  .catbar::-webkit-scrollbar{display:none;}
+  .catbar button{
+    flex-shrink:0; background:var(--bg); border:none; border-radius:999px; padding:6px 12px;
+    font-size:12px; font-weight:700; color:var(--ink); font-family:inherit; cursor:pointer;
+  }
+  .inputrow{display:flex; gap:8px;}
+  .inputrow input{
+    flex:1; border:1.5px solid var(--border); border-radius:999px; padding:10px 16px;
+    font-size:16px; font-family:inherit; background:#FAFCFA;
+  }
+  .inputrow input:focus{outline:2px solid var(--green); border-color:var(--green);}
+  .inputrow button{
+    background:var(--green); color:#fff; border:none; border-radius:999px; width:74px;
+    font-size:14px; font-weight:700; font-family:inherit; cursor:pointer;
+  }
+  .inputrow button:active{background:var(--green-dark);}
+</style>
+</head>
+<body>
+<header>
+  <div class="avatar">W</div>
+  <div>
+    <h1>ウォルシフ かんたんヘルプ</h1>
+    <p>店長さま向け・タップか入力で質問できます</p>
+  </div>
+</header>
+
+<div id="chat" aria-live="polite"></div>
+
+<footer>
+  <div class="catbar" id="catbar"></div>
+  <div class="inputrow">
+    <input type="text" id="q" placeholder="例）スタッフの追加" enterkeyhint="search" aria-label="質問を入力">
+    <button type="button" id="send">送信</button>
+  </div>
+</footer>
+
+<script>
+(function(){
+'use strict';
+
+/* ============ カテゴリ ============ */
+var CATS = ['はじめに','スタッフの登録・入退職','提出状況の見かた','締切と期間','シフト表シート','困ったとき'];
+
+/* ============ Q&Aデータ（追記はこの配列に1件足すだけ） ============ */
+var HELP_QA = [
+{c:0,q:'店長メニューはどこから開く？',k:['店長メニュー','開き方','入り方','どこ','鍵','🔑'],
+a:'LINEのトーク画面下にあるメニューの<b>「店長メニュー🔑」</b>をタップしてください。\nLINEで本人確認をしたうえで、店長さまにだけ管理画面が表示されます。\nスタッフが同じボタンを押しても中身は見えない仕組みなので、ご安心ください。'},
+{c:0,q:'店長メニューで何ができる？',k:['できること','機能','トップ','ホーム'],
+a:'開いてすぐに<b>「提出 ◯／◯名」</b>という今の提出状況が見えます。\nそこから\n・提出状況の詳細（誰が出した／まだか）\n・メンバー管理（スタッフの追加・退職・並べ替え）\nに進めます。複数のお店を担当している場合は、上のタブでお店を切り替えられます。'},
+{c:0,q:'スタッフには何をしてもらえばいい？',k:['スタッフ','使い方','案内','説明','はじめ','初回'],
+a:'スタッフにお願いするのは3つだけです。\n1. お店の公式LINEを<b>友だち追加</b>\n2. メニューから提出画面を開き、<b>初回だけ名前のリストから自分を選ぶ</b>\n3. カレンダーで希望を選んで提出\nメールアドレスやパスワードの登録は一切ありません。'},
+{c:0,q:'お店を切り替えるタブが出ない',k:['タブ','切替','店舗','出ない'],
+a:'お店の切り替えタブは、<b>複数のお店の店長権限を持つ方にだけ</b>表示されます。\n1店舗のみご担当の場合は表示されないのが正常です。'},
+
+{c:1,q:'新しいスタッフを追加したい',k:['追加','新人','入社','登録','メンバー追加'],
+a:'店長メニュー →<b>メンバー管理</b>→ 名前を入力して追加、で完了です。\n追加した直後は「<b>LINE連携待ち</b>」の状態になり、本人が初めてLINEで提出画面を開いて自分の名前を選ぶと、自動で結びつきます。'},
+{c:1,q:'「LINE連携待ち」ってどういう意味？',k:['連携待ち','LINE連携','未連携','紐付け'],
+a:'店長さまが名前を登録済みで、<b>本人がまだLINEで初回の名前選択をしていない</b>状態です。\n本人が提出画面を開いて自分の名前を選べば解消されます。何日経っても消えない場合は、本人がまだ開いていないだけのことがほとんどです。'},
+{c:1,q:'スタッフが辞めたときは？',k:['退職','辞めた','削除','消す','退会'],
+a:'メンバー管理でその方を<b>退職</b>にしてください。リストや提出の集計から外れます。\nなお、過去の提出記録を守るため<b>完全な削除はできない</b>仕組みです（誤操作でデータが消える事故を防ぐためです）。'},
+{c:1,q:'退職にした人を戻したい（出戻り）',k:['再雇用','出戻り','復帰','戻す','取り消し'],
+a:'メンバー管理の<b>「退職者を表示」</b>をONにすると退職者が出てきます。\nその方を1タップで<b>在籍に戻せます</b>。過去の記録もそのまま引き継がれます。'},
+{c:1,q:'名簿の並び順を変えたい',k:['並び替え','並べ替え','順番','ソート','ドラッグ'],
+a:'メンバー管理で名前を<b>長押ししてドラッグ</b>すると並べ替えられます。\n保存すると、シフト表シートの行の順番にも<b>自動で反映</b>されます（10分以内）。シート側で行を動かす必要はありません。'},
+{c:1,q:'自分（店長）を退職にできる？',k:['自分','店長','退職できない'],
+a:'できない仕様です。誤操作でお店の管理者がいなくなる事故を防ぐためです。\n店長の交代がある場合は、<b>運営までご連絡ください</b>。安全に引き継ぎます。'},
+{c:1,q:'登録した名前を間違えた・変えたい',k:['名前','間違え','変更','改名','表示名'],
+a:'メンバー管理でその方の<b>表示名を編集</b>できます。\nここで直した名前が、アプリの画面とシフト表シートの両方に使われます。'},
+
+{c:2,q:'「提出 ◯／◯名」の数字の意味は？',k:['数字','意味','分母','人数','カウント'],
+a:'分母は「<b>在籍中で、LINE連携が済んでいるスタッフ</b>」の人数です。\n店長さま自身は数に含まれません（提出しない管理者が入ると、いつまでも未提出が残ってしまうためです）。'},
+{c:2,q:'誰がまだ提出していないか知りたい',k:['未提出','誰','一覧','詳細','催促'],
+a:'店長メニューの<b>「提出状況の詳細」</b>で、提出済み／未提出が名前で一覧できます。\n名前をタップすると、その方の希望の中身も確認できます。'},
+{c:2,q:'提出したはずなのに未提出と出る',k:['提出したのに','反映されない','未提出になる','おかしい'],
+a:'まずは画面を<b>一度閉じて開き直して</b>ください。\nそれでも変わらない場合、スタッフが最後の「提出する」ボタンまで押し切れていないことがあります（途中保存の状態）。本人に提出画面を確認してもらってください。\n<span class="small">それでも解決しないときは運営までご連絡ください。すぐ調べます。</span>'},
+{c:2,q:'店長も自分のシフトを提出したい',k:['店長も提出','自分の提出'],
+a:'店長さまも提出画面（通常のホーム）から提出自体は可能ですが、現在の集計は「スタッフの提出状況」を数える設計です。\n<b>店長も提出を数える運用にしたい場合は運営へご相談ください。</b>お店ごとの設定で対応していきます。'},
+{c:2,q:'過去の提出を確認したい',k:['過去','前の期間','履歴'],
+a:'画面には今受付中の期間の状況が表示されます。\n過去の提出記録はデータとして保存されていますので、確認が必要な場合は<b>運営までご連絡ください</b>。'},
+
+{c:3,q:'提出の締切はいつ？',k:['締切','いつまで','期限','デッドライン'],
+a:'お店ごとの設定によります。標準では\n・<b>前半分（1〜15日）</b>→ 前の月の25日 23:59\n・<b>後半分（16日〜月末）</b>→ その月の10日 23:59\nです。締切を過ぎると自動で締め切られ、次の受付が自動で始まります。店長さまの操作は不要です。'},
+{c:3,q:'締切を過ぎた人の希望はどうする？',k:['締切過ぎた','遅れた','間に合わなかった'],
+a:'締切後は提出画面からは出せなくなります。\nどうしても必要な場合は、店長さまが直接聞いて、シフト作成のときに反映してください（Excel／シート側での調整は自由です）。'},
+{c:3,q:'締切日を変えたい',k:['締切変更','変えたい','設定'],
+a:'変えられます。<b>運営までご連絡ください</b>。お店ごとに締切日を設定できます（追加料金はありません）。'},
+{c:3,q:'「期間」ってなに？',k:['期間とは','前半','後半','半月'],
+a:'提出の区切りのことです。標準では半月ごと（<b>1〜15日＝前半</b>／<b>16日〜月末＝後半</b>）に分かれていて、締切が来ると自動で次の期間に切り替わります。'},
+
+{c:4,q:'提出はいつシートに反映される？',k:['シート','反映','同期','スプレッドシート','いつ'],
+a:'<b>10分ごとに自動で反映</b>されます。提出・名簿の変更・並び順の変更が対象です。'},
+{c:4,q:'今すぐシートに反映したい',k:['今すぐ','すぐ反映','手動','同期ボタン'],
+a:'メンバー管理画面にある<b>同期ボタン</b>を押すと、その場で反映できます。\n（連続で押せるのは20秒に1回までです）'},
+{c:4,q:'シートを直接編集してもいい？',k:['直接編集','シート編集','いじる','触る'],
+a:'<b>シフトの割り振り（勤務を組む作業）は今まで通りシート／ExcelでOKです。</b>\nただし、<b>名簿・並び順・提出された希望</b>はアプリ側が「正」なので、シート側で書き換えないでください（次の自動反映で上書きされます）。'},
+{c:4,q:'シートの年月や前半・後半の表示は？',k:['ヘッダー','年月','切り替わる'],
+a:'期間の切り替えに合わせて<b>自動で更新</b>されます。表示される期間は毎月1日と15日を目安に切り替わります。手で直す必要はありません。'},
+
+{c:5,q:'スタッフに「名前がリストにない」と言われた',k:['名前がない','リストにない','選べない'],
+a:'店長さまが<b>メンバー管理でその方を追加</b>すれば、すぐリストに表示されます。\n追加後、本人にもう一度提出画面を開いてもらってください。'},
+{c:5,q:'スタッフが機種変更・LINEを入れ直した',k:['機種変','機種変更','引き継ぎ','スマホ変えた'],
+a:'<b>同じLINEアカウントを引き継いでいれば、そのまま使えます</b>（何もしなくてOK）。\nLINEアカウント自体を新しく作り直した場合は、付け直しが必要なので<b>運営までご連絡ください</b>。'},
+{c:5,q:'画面の表示が古い・おかしい',k:['表示がおかしい','古い','バグ','変','崩れ'],
+a:'まず、その画面を<b>一度閉じて開き直して</b>ください。\n直らないときはLINEアプリ自体を再起動してから再度お試しください。それでも直らない場合は、スクリーンショットを添えて運営までご連絡ください。'},
+{c:5,q:'間違えてスタッフを退職にしてしまった',k:['間違えて退職','誤操作','戻したい'],
+a:'大丈夫です。メンバー管理の<b>「退職者を表示」をON</b>→ その方を1タップで在籍に戻せます。データは何も消えていません。'},
+{c:5,q:'運営への問い合わせ先は？',k:['問い合わせ','連絡先','サポート','聞きたい','メール'],
+a:'お店の担当LINE、またはメール <b>info@wolshif.jp</b> までどうぞ。\n<b>画面のスクリーンショットを添えていただくと解決が早いです。</b>おおむね当日〜翌営業日にご返信します。'}
+];
+
+/* ============ チャット描画 ============ */
+var chat = document.getElementById('chat');
+function bubble(who, html){
+  var m = document.createElement('div'); m.className = 'msg ' + who;
+  var b = document.createElement('div'); b.className = 'bubble'; b.innerHTML = html;
+  m.appendChild(b); chat.appendChild(m); scrollDown();
+}
+function chips(items, isCat){
+  var wrap = document.createElement('div'); wrap.className = 'chips';
+  items.forEach(function(it){
+    var c = document.createElement('button'); c.type = 'button';
+    c.className = 'chip' + (isCat ? ' cat' : '');
+    c.textContent = it.label;
+    c.addEventListener('click', it.onTap);
+    wrap.appendChild(c);
+  });
+  chat.appendChild(wrap); scrollDown();
+}
+function scrollDown(){ chat.scrollTop = chat.scrollHeight; }
+
+function showAnswer(qa){
+  bubble('user', qa.q);
+  setTimeout(function(){ bubble('bot', qa.a); }, 120);
+}
+function showCategory(ci){
+  bubble('user', CATS[ci]);
+  bubble('bot', '「<b>' + CATS[ci] + '</b>」のよくある質問です。タップしてください。');
+  chips(HELP_QA.filter(function(x){ return x.c === ci; }).map(function(qa){
+    return {label: qa.q, onTap: function(){ showAnswer(qa); }};
+  }), false);
+}
+
+/* ============ キーワード検索 ============ */
+function search(text){
+  var t = text.toLowerCase().replace(/\s+/g,'');
+  var scored = HELP_QA.map(function(qa){
+    var s = 0;
+    qa.k.forEach(function(k){ if(t.indexOf(k.toLowerCase()) >= 0) s += 2; });
+    if(qa.q.toLowerCase().indexOf(t) >= 0 && t.length >= 2) s += 3;
+    qa.k.forEach(function(k){ if(k.toLowerCase().indexOf(t) >= 0 && t.length >= 2) s += 1; });
+    return {qa: qa, s: s};
+  }).filter(function(x){ return x.s > 0; }).sort(function(a,b){ return b.s - a.s; });
+
+  bubble('user', text);
+  if(scored.length === 0){
+    bubble('bot', 'ごめんなさい、うまく見つけられませんでした。\n下のカテゴリから探すか、別の言葉（例：「追加」「締切」「同期」）でお試しください。\n<span class="small">お急ぎのときは 運営LINE または info@wolshif.jp へどうぞ。</span>');
+    return;
+  }
+  bubble('bot', scored[0].qa.a);
+  if(scored.length > 1){
+    bubble('bot', 'こちらも近いかもしれません：');
+    chips(scored.slice(1, 4).map(function(x){
+      return {label: x.qa.q, onTap: function(){ showAnswer(x.qa); }};
+    }), false);
+  }
+}
+
+/* ============ 入力・カテゴリバー ============ */
+var input = document.getElementById('q');
+document.getElementById('send').addEventListener('click', go);
+input.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); go(); } });
+function go(){
+  var v = input.value.trim();
+  if(!v) return;
+  input.value = '';
+  search(v);
+}
+var catbar = document.getElementById('catbar');
+CATS.forEach(function(name, i){
+  var b = document.createElement('button'); b.type = 'button'; b.textContent = name;
+  b.addEventListener('click', function(){ showCategory(i); });
+  catbar.appendChild(b);
+});
+
+/* ============ 起動あいさつ ============ */
+bubble('bot', 'こんにちは！<b>ウォルシフのヘルプ</b>です。\n知りたいことをカテゴリから選ぶか、下の入力欄にひとこと入れてください（例：「スタッフの追加」）。');
+chips(CATS.map(function(name, i){
+  return {label: name, onTap: function(){ showCategory(i); }};
+}), true);
+})();
+</script>
+</body>
+</html>
