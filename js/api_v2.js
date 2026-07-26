@@ -419,8 +419,9 @@ const SupaAPI = {
   // 店長トップページ（manager-home.html）の提出状況集計
   //
   // 集計ルールは設計書追記_店長トップページ.md の確定版に従う。
-  // 分母（対象スタッフ）は role='staff' の紐付け済みメンバーのみで、
-  // 店長（manager/admin）は含めない（＝フェーズ②の店舗設定まで対象外）。
+  // 分母（対象スタッフ）は include_in_submission=true の紐付け済みメンバー。
+  // 役職（role）では絞らない＝「提出する人か否か」を include_in_submission で判定するため、
+  // 実際に勤務・提出するオーナー（role='admin'）等も対象に含まれる。
   // データ取得3原則どおり submission_items は一覧では引かない。
   // ============================================================
 
@@ -440,8 +441,9 @@ const SupaAPI = {
   },
 
   /**
-   * 提出状況の分母となる対象スタッフを取得（設計書の確定ルール）:
-   *   status='active' AND user_id IS NOT NULL AND role='staff' AND store_id=対象店
+   * 提出状況の分母となる対象スタッフを取得（確定ルール）:
+   *   status='active' AND user_id IS NOT NULL AND include_in_submission=true AND store_id=対象店
+   * role では絞らない（提出対象か否かは include_in_submission 列で判定）。
    * 並びは sort_order 順（詳細一覧の表示順に一致）。
    * @returns {Promise<Array<{id:string, name:string, sortOrder:number}>>}
    */
@@ -450,7 +452,7 @@ const SupaAPI = {
       .select('user_id, display_name, sort_order')
       .eq('store_id', storeId)
       .eq('status', 'active')
-      .eq('role', 'staff')
+      .eq('include_in_submission', true)
       .not('user_id', 'is', null)
       .order('sort_order', { ascending: true });
     if (mem.error) throw new Error('対象スタッフの取得に失敗しました: ' + mem.error.message);
