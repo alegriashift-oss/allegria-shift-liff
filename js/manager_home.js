@@ -8,6 +8,9 @@
  * 2026-07 新UI: 提出状況カード最上位（ドーナツ進捗）・店舗切替カード（短縮名タブ）・
  * シフト表は中カード・補助機能は下部リスト型。検証ページ(manager-home-v2)から昇格。
  *
+ * 2026-07-26 期間セレクタ: 受付中(open)だけを見る作りをやめ、
+ * 「受付中」＋「直近で締め切られた期間」の最大2件から選べるようにした。
+ *
  * ロード順: config_v2.js → api_v2.js → manager_home.js
  * calendar.js には依存しない。個別スタッフの明細は confirm-item 形式で自前描画する。
  */
@@ -21,7 +24,8 @@ const MgrState = {
   displayName: null,
   managed    : [],    // 店長権限(admin/manager)を持つ所属 [{store_id, store_name, store_key, role, ...}]
   storeId    : null,  // 表示中の店舗
-  period     : null,  // 表示中店舗の今期（open）VM または null
+  periods    : [],    // 切替候補（表示順: 締切済み → 受付中）最大2件
+  period     : null,  // 選択中の期間（periods の要素）または null
   staff      : []     // 対象スタッフ [{id, name, sortOrder, submitted}]
 };
 
@@ -69,6 +73,50 @@ function formatDateLabel(dateStr) {
   if (isNaN(d.getTime())) return String(dateStr);
   const youbi = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
   return (d.getMonth() + 1) + '月' + d.getDate() + '日（' + youbi + '）';
+}
+
+/**
+ * 今日（日本時間）の "YYYY-MM-DD"。
+ * 端末のタイムゾーンがJSTでなくても、期間の start_date（DATE型・JST基準）と
+ * 文字列比較できる形で揃える。ISO日付なので辞書順比較＝日付順比較。
+ */
+function todayJst() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+}
+
+/** deadline（timestamptz）→ 日本時間の "M/D"。取れなければ null */
+function formatDeadlineShort(deadline) {
+  if (!deadline) return null;
+  // PostgRESTは "2026-08-10T14:59:00+00:00" だが、経路によっては
+  // スペース区切り・"+00"（2桁だけのオフセット）で来ることがある。
+  // どちらも Date が解釈できる形に正規化してから渡す。
+  const iso = String(deadline)
+    .replace(' ', 'T')
+    .replace(/([+-]\d{2})$/, '$1:00');
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric'
+  }).format(d);
+  return parts.replace(/\s/g, '');  // "8/10"
+}
+
+/** 期間の状態ラベル（セレクタ用の長い表記） */
+function periodStateLabel(period) {
+  if (!period) return '';
+  if (period.status === 'open') {
+    const dl = formatDeadlineShort(period.deadline);
+    return dl ? '受付中・締切' + dl : '受付中';
+  }
+  return '締切済み・シフト作成中';
+}
+
+/** 期間の状態ラベル（カード内チップ用の短い表記） */
+function periodStateChip(period) {
+  if (!period) return '';
+  return period.status === 'open' ? '受付中' : '締切済み';
 }
 
 /**
@@ -169,48 +217,94 @@ const ManagerHome = {
       </div>`;
   },
 
-  /** ホーム画面（提出状況カードほか）を描画 */
-  async showHome() {
-    showScreen('home');
-    this._renderHeader();
-    this._renderStoreSwitch();
-    this._renderSheetButton();
+  /**
+   * 既定で開く期間を決める。
+   *   直近で締め切られた期間の start_date が今日より後（＝まだ勤務が始まっていない
+   *   ＝これから組む期間）なら、そちらを選ぶ。そうでなければ受付中の期間。
+   * 片方しか無ければそれを返す。
+   */
+  _defaultPeriod(open, closed) {
+    if (!closed) return open;
+    if (!open)   return closed;
+    return closed.start_date > todayJst() ? closed : open;
+  },
 
-    const card = document.getElementById('mgr-submission-card');
-    card.innerHTML = '<p class="loading-text">提出状況を読み込み中…</p>';
+  /**
+   * 期間セレクタ（締切済み / 受付中）。候補が1件以下のときは出さない。
+   */
+  _renderPeriodSwitch() {
+    const card = document.getElementById('mgr-period-switch');
+    if (!card) return;
+    if (MgrState.periods.length < 2) {
+      card.style.display = 'none';
+      card.innerHTML = '';
+      return;
+    }
+    card.style.display = '';
+    const current = MgrState.period;
+    card.innerHTML = `
+      <p class="mgr-switch-title">🗓 表示する期間</p>
+      <div class="mgr-period-tabs">` +
+      MgrState.periods.map(p => {
+        const on    = current && p.id === current.id;
+        const state = periodStateLabel(p);
+        return `
+        <button class="mgr-period-tab${on ? ' on' : ''}"
+          aria-pressed="${on ? 'true' : 'false'}"
+          aria-label="${escapeHtml(p.title + '（' + state + '）')}"
+          onclick="ManagerHome.switchPeriod('${p.id}')">
+          <span class="mgr-period-tab-title">${escapeHtml(p.title)}</span>
+          <span class="mgr-period-tab-state">${escapeHtml(state)}</span>
+        </button>`;
+      }).join('') + `
+      </div>`;
+  },
+
+  /** セレクタから期間を切り替える（店舗・スタッフ一覧は据え置き、提出状況だけ引き直す） */
+  switchPeriod(periodId) {
+    const period = MgrState.periods.find(p => p.id === periodId);
+    if (!period || (MgrState.period && MgrState.period.id === periodId)) return;
+    MgrState.period = period;
+    this._renderPeriodSwitch();
+    this._renderSubmissionCard();
+  },
+
+  /**
+   * 選択中の期間の提出状況カードを描画する。
+   * 判定は submissions の有無のみ（submission_items は一覧では絶対に引かない）。
+   */
+  async _renderSubmissionCard() {
+    const card   = document.getElementById('mgr-submission-card');
+    const period = MgrState.period;
+    const head   = `
+        <div class="mgr-sub-head">
+          <p class="mgr-panel-title">📋 提出状況</p>` +
+      (period
+        ? `<span class="mgr-period-chip">📅 ${escapeHtml(period.title)}（${escapeHtml(periodStateChip(period))}）</span>`
+        : '') + `
+        </div>`;
+
+    if (!period) {
+      card.innerHTML = head + '<p class="info-text">表示できる期間がありません。</p>';
+      return;
+    }
+
+    card.innerHTML = head + '<p class="loading-text">提出状況を読み込み中…</p>';
 
     try {
-      const storeId = MgrState.storeId;
-      const period  = await SupaAPI.getManagerOpenPeriod(storeId);
-      const staff   = await SupaAPI.getEligibleStaff(storeId);
-      const submittedIds = period
-        ? await SupaAPI.getSubmittedUserIds(period.id)
-        : new Set();
+      const submittedIds = await SupaAPI.getSubmittedUserIds(period.id);
+      // 期間切替後に古いレスポンスが遅れて届いても上書きしない
+      if (!MgrState.period || MgrState.period.id !== period.id) return;
 
       // 詳細一覧でも使うので状態に持たせる（再取得せず遷移できる）
-      MgrState.period = period;
-      MgrState.staff  = staff.map(s => ({ ...s, submitted: submittedIds.has(s.id) }));
+      MgrState.staff = MgrState.staff.map(s => ({ ...s, submitted: submittedIds.has(s.id) }));
 
       const eligible  = MgrState.staff.length;
       const submitted = MgrState.staff.filter(s => s.submitted).length;
       const missing   = eligible - submitted;
       const pct       = eligible > 0 ? Math.round(submitted / eligible * 100) : 0;
 
-      if (!period) {
-        card.innerHTML = `
-          <div class="mgr-sub-head">
-            <p class="mgr-panel-title">📋 提出状況</p>
-          </div>
-          <p class="info-text">現在、受付中の期間はありません。</p>
-        `;
-        return;
-      }
-
-      card.innerHTML = `
-        <div class="mgr-sub-head">
-          <p class="mgr-panel-title">📋 提出状況</p>
-          <span class="mgr-period-chip">📅 ${escapeHtml(period.title)}</span>
-        </div>
+      card.innerHTML = head + `
         <div class="mgr-sub-grid">
           <div class="mgr-donut" style="--pct:${pct}">
             <div class="mgr-donut-hole">
@@ -225,6 +319,43 @@ const ManagerHome = {
         </div>
         <button class="btn-primary" onclick="ManagerHome.openDetail()">提出状況の詳細を見る</button>
       `;
+    } catch (err) {
+      console.error('[ManagerHome._renderSubmissionCard]', err);
+      card.innerHTML = head + `
+        <p class="error-text">${escapeHtml(err.message)}</p>
+        <button class="btn-secondary" onclick="ManagerHome.showHome()">再読み込み</button>
+      `;
+    }
+  },
+
+  /** ホーム画面（提出状況カードほか）を描画 */
+  async showHome() {
+    showScreen('home');
+    this._renderHeader();
+    this._renderStoreSwitch();
+    this._renderSheetButton();
+
+    // 店舗切替のたびに前の店の期間が残らないよう、先に空にしてから読み直す
+    MgrState.periods = [];
+    MgrState.period  = null;
+    MgrState.staff   = [];
+    this._renderPeriodSwitch();
+
+    const card = document.getElementById('mgr-submission-card');
+    card.innerHTML = '<p class="loading-text">提出状況を読み込み中…</p>';
+
+    try {
+      const storeId = MgrState.storeId;
+      const { open, closed } = await SupaAPI.getManagerPeriods(storeId);
+      const staff = await SupaAPI.getEligibleStaff(storeId);
+
+      // 表示順は「締切済み（作成中）→ 受付中」。時系列でも締切済みが手前になる。
+      MgrState.periods = [closed, open].filter(Boolean);
+      MgrState.period  = this._defaultPeriod(open, closed);
+      MgrState.staff   = staff.map(s => ({ ...s, submitted: false }));
+
+      this._renderPeriodSwitch();
+      await this._renderSubmissionCard();
     } catch (err) {
       console.error('[ManagerHome.showHome]', err);
       card.innerHTML = `
@@ -243,7 +374,7 @@ const ManagerHome = {
    * ここ（manager-home）へ戻る。?v= はキャッシュバスター。
    */
   openMembers() {
-    location.href = 'admin-v2.html?v=20260702-v2&from=manager';
+    location.href = 'admin-v2.html?v=20260726-v3-period-selector&from=manager';
   },
 
   // --------------------------------------------------------
@@ -252,9 +383,14 @@ const ManagerHome = {
 
   openDetail() {
     showScreen('detail');
+    // 期間はセレクタで選ばれた MgrState.period をそのまま引き継ぐ（再取得しない）
     const period = MgrState.period;
     const labelEl = document.getElementById('mgr-detail-period');
-    if (labelEl) labelEl.textContent = period ? period.title : '';
+    if (labelEl) {
+      labelEl.textContent = period
+        ? period.title + '（' + periodStateChip(period) + '）'
+        : '';
+    }
 
     const list = document.getElementById('mgr-detail-list');
     if (!MgrState.staff.length) {

@@ -426,18 +426,41 @@ const SupaAPI = {
   // ============================================================
 
   /**
-   * 指定店舗で受付中（status='open'）の期間を1件取得する（今期）。
-   * 複数openがある場合は開始日が最も早いものを今期とみなす。無ければnull。
+   * 店長トップで切り替え表示する期間を最大2件取得する。
+   *
+   *   open   : 受付中（status='open'）の期間。複数あれば開始日が最も早いものを今期とみなす。
+   *   closed : 直近で締め切られた期間（status='closed' のうち start_date が最新のもの）。
+   *
+   * open だけを見ていた頃は、締切を過ぎた瞬間に「これから組む期間」の提出状況が
+   * 見られなくなっていた（2026-07-26に発生）。さらに受付開始日を1日/15日にしたため、
+   * 11〜14日・26日〜月末は open が存在しない。closed も併せて返すことで画面が空にならない。
+   *
+   * どちらも数行の軽いクエリ。submission_items は当然引かない。
+   * @returns {Promise<{open:Object|null, closed:Object|null}>}
    */
-  async getManagerOpenPeriod(storeId) {
-    const res = await this.db.from('shift_periods')
-      .select('id, store_id, title, start_date, end_date, deadline, status')
+  async getManagerPeriods(storeId) {
+    const COLS = 'id, store_id, title, start_date, end_date, deadline, status';
+
+    const openRes = await this.db.from('shift_periods')
+      .select(COLS)
       .eq('store_id', storeId)
       .eq('status', 'open')
       .order('start_date', { ascending: true })
       .limit(1);
-    if (res.error) throw new Error('受付中の期間の取得に失敗しました: ' + res.error.message);
-    return (res.data || [])[0] || null;
+    if (openRes.error) throw new Error('受付中の期間の取得に失敗しました: ' + openRes.error.message);
+
+    const closedRes = await this.db.from('shift_periods')
+      .select(COLS)
+      .eq('store_id', storeId)
+      .eq('status', 'closed')
+      .order('start_date', { ascending: false })
+      .limit(1);
+    if (closedRes.error) throw new Error('締切済みの期間の取得に失敗しました: ' + closedRes.error.message);
+
+    return {
+      open  : (openRes.data   || [])[0] || null,
+      closed: (closedRes.data || [])[0] || null
+    };
   },
 
   /**

@@ -47,6 +47,22 @@
       color: var(--color-primary-dk); font-weight: 700;
     }
 
+    /* --- 期間セレクタ（受付中 / 締切済み の2件があるときだけ表示） --- */
+    .mgr-period-tabs { display: flex; gap: 8px; }
+    .mgr-period-tab {
+      flex: 1 1 0; min-width: 0; padding: 10px 8px; border-radius: 12px;
+      display: flex; flex-direction: column; gap: 2px; align-items: center;
+      border: 1px solid var(--color-border); background: #fff;
+      font: inherit; color: var(--color-text-sub);
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    .mgr-period-tab-title { font-size: 0.92rem; font-weight: 700; }
+    .mgr-period-tab-state { font-size: 0.7rem; line-height: 1.25; }
+    .mgr-period-tab.on {
+      border: 2px solid var(--color-primary); background: #f0fdf4;
+      color: var(--color-primary-dk);
+    }
+
     /* --- 提出状況カード（最上位・最重要） --- */
     .mgr-sub-head {
       display: flex; align-items: center; justify-content: space-between;
@@ -161,7 +177,11 @@
       <!-- 店舗切替（掛け持ち店長のときだけ ManagerHome._renderStoreSwitch() が表示） -->
       <div id="mgr-store-switch" class="mgr-panel" style="display:none"></div>
 
-      <!-- 提出状況カード（ManagerHome.showHome() が中身を描画） -->
+      <!-- 期間セレクタ（受付中・締切済みの2件がそろうときだけ
+           ManagerHome._renderPeriodSwitch() が表示） -->
+      <div id="mgr-period-switch" class="mgr-panel" style="display:none"></div>
+
+      <!-- 提出状況カード（ManagerHome._renderSubmissionCard() が中身を描画） -->
       <div id="mgr-submission-card" class="mgr-panel">
         <p class="loading-text">提出状況を読み込み中…</p>
       </div>
@@ -281,8 +301,8 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
-  <script src="js/api_v2.js?v=20260726-v3-include-flag"></script>
-  <script src="js/manager_home.js?v=20260706-v4-newui"></script>
+  <script src="js/api_v2.js?v=20260726-v4-period-selector"></script>
+  <script src="js/manager_home.js?v=20260726-v5-period-selector"></script>
 
 </body>
 </html>

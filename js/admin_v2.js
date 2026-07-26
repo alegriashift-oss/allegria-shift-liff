@@ -74,7 +74,7 @@ function escapeHtml(value) {
 function backTarget() {
   const from = new URLSearchParams(location.search).get('from');
   if (from === 'manager') {
-    return { url: 'manager-home.html?v=20260702-v2', label: '店長トップへ戻る' };
+    return { url: 'manager-home.html?v=20260726-v3-period-selector', label: '店長トップへ戻る' };
   }
   return { url: 'submit-v2.html', label: 'アプリのホームへ戻る' };
 }
