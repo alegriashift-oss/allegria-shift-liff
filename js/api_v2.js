@@ -41,10 +41,65 @@ const SupaAPI = {
     return { http: res.status, body: body };
   },
 
+  /**
+   * JWT（LINEのIDトークン）の exp をミリ秒で返す。判定できなければ 0。
+   * 署名検証はしない＝「期限が近いか」を手前で見るためだけの用途。
+   * 検証はあくまで line-auth Edge Function 側の責務。
+   */
+  _decodeJwtExpMs(jwt) {
+    try {
+      const seg = String(jwt).split('.')[1];
+      if (!seg) return 0;
+      // base64url → base64（パディングを補う）
+      let b64 = seg.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      // payload に日本語が入っていてもよいよう UTF-8 として解く
+      const json = decodeURIComponent(
+        atob(b64).split('').map(
+          c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join('')
+      );
+      const exp = JSON.parse(json).exp;
+      return typeof exp === 'number' ? exp * 1000 : 0;
+    } catch (e) {
+      return 0;
+    }
+  },
+
+  /**
+   * IDトークンの期限切れを検知したときの自動復旧。
+   *
+   * liff.logout() → liff.login() でトークンを取り直す。リダイレクトで戻ってくるので、
+   * 呼び出し側は以降の処理を止める必要がある＝ここでは必ず throw して流れを断ち切る。
+   *
+   * sessionStorage のフラグで「1セッションにつき自動リトライは1回だけ」に制限する。
+   * 取り直してもなお期限切れなら、リロードのたびに再ログインを繰り返す無限ループに
+   * なるため（今回の不具合の本体）、そこで打ち切って手動対処を案内する。
+   * フラグは _establishSession() の成功時に消す。
+   */
+  _forceRelogin() {
+    if (sessionStorage.getItem('wolshif_relogin') === '1') {
+      throw new Error(
+        'LINEの認証情報の有効期限が切れました。お手数ですが、LINEアプリを一度完全に終了してから、もう一度開いてください。'
+      );
+    }
+    sessionStorage.setItem('wolshif_relogin', '1');
+    try { liff.logout(); } catch (e) {}
+    liff.login({ redirectUri: location.href });
+    // 画面遷移が始まるまでの間に古いトークンで処理が進まないよう、ここで止める
+    throw new Error('LINEの認証情報を更新しています。この画面のままお待ちください…');
+  },
+
   _getIdTokenOrThrow() {
     const idToken = liff.getIDToken();
     if (!idToken) {
       throw new Error('LINE認証情報を取得できませんでした。LINEアプリ内で開き直してください。');
+    }
+    // 期限切れ（や切れる直前）のトークンを投げても401になるだけなので、手前で取り直す。
+    // exp が読めなかった場合(0)は判定不能としてそのまま送り、サーバー側の判断に委ねる。
+    const expMs = this._decodeJwtExpMs(idToken);
+    if (expMs && (expMs - Date.now()) < 60 * 1000) {
+      this._forceRelogin();  // 必ず throw する
     }
     return idToken;
   },
@@ -72,6 +127,10 @@ const SupaAPI = {
     if (body.status === 'need_registration') {
       return body;
     }
+    // 端末時計のズレ等で手前の期限チェックをすり抜けた期限切れは、ここで拾って取り直す
+    if (this._isExpiredTokenResponse(http, body)) {
+      this._forceRelogin();  // 必ず throw する
+    }
     throw new Error('ログインに失敗しました (HTTP ' + http + '): ' + (body.message || body.code || ''));
   },
 
@@ -93,7 +152,24 @@ const SupaAPI = {
     if (http === 409 && body.code === 'name_already_taken') {
       return body;
     }
+    if (this._isExpiredTokenResponse(http, body)) {
+      this._forceRelogin();  // 必ず throw する
+    }
     throw new Error('登録に失敗しました (HTTP ' + http + '): ' + (body.message || body.code || ''));
+  },
+
+  /**
+   * line-auth の応答が「IDトークンの期限切れ」かどうか。
+   * 本文の形（message / code / error のどこに入るか）に依存しないよう、
+   * 401 かつ本文のどこかに expired を含むか、で判定する。
+   */
+  _isExpiredTokenResponse(http, body) {
+    if (http !== 401) return false;
+    try {
+      return /expired/i.test(JSON.stringify(body || {}));
+    } catch (e) {
+      return false;
+    }
   },
 
   async _establishSession(authResult) {
@@ -105,6 +181,8 @@ const SupaAPI = {
       throw new Error('セッションの確立に失敗しました: ' + error.message);
     }
     this.user = data.user;
+    // 正常にログインできた＝自動リトライ枠を次回のためにリセットする
+    sessionStorage.removeItem('wolshif_relogin');
   },
 
   // ============================================================
