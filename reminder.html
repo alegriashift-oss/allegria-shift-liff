@@ -4,33 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#06C755">
-  <title>アレグリア 提出リマインド設定</title>
+  <title>アレグリア 提出リマインド</title>
   <link rel="stylesheet" href="css/style.css?v=20260626-pending-member">
   <style>
     /* ===================================================================
-       提出リマインド設定（このページ専用）。
+       提出リマインド（このページ専用）。
        style.css には手を入れず、ページ内スコープで完結させる。
        クラス名は rmd- 接頭辞で他ページ（mgr- / 既存クラス）と衝突させない。
        見た目の作法は manager-home.html の白カード（角丸16px）に合わせる。
+
+       この画面から送信は起動できない。
+       送信ボタン・テスト送信ボタン・ON/OFFトグルは意図的に存在しない。
+       配信の開始は運営側の作業であり、店長の画面には出さない。
+
+       装飾の方針: 絵文字や記号で飾らず、事実を淡々と書く。
+       状態の区別は文言と色で行う（バッジに絵文字を足さない）。
     =================================================================== */
+
+    /* --- ヘッダーの戻る（‹） --- */
+    .screen-header { position: relative; }
+    .rmd-head-back {
+      position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+      width: 40px; height: 40px; padding: 0;
+      border: none; background: transparent; color: #fff;
+      font-size: 1.6rem; line-height: 1; font-family: inherit;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
 
     /* --- 白カード共通 --- */
     .rmd-panel {
       background: #fff;
       border-radius: 16px;
-      padding: 18px 16px;
+      padding: 16px;
       margin-bottom: 14px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
-    .rmd-panel-title { font-size: 1rem; font-weight: 700; margin-bottom: 12px; }
     .rmd-panel-note { font-size: 0.78rem; color: var(--color-text-sub); margin-top: 8px; line-height: 1.6; }
+    .rmd-field-label { font-size: 0.85rem; font-weight: 700; margin-bottom: 10px; }
 
     /* --- 店舗切替タブ（掛け持ち店長のみ） --- */
-    .rmd-switch-title { font-size: 0.85rem; font-weight: 700; margin: 0 0 10px; }
-    .rmd-switch-tabs { display: flex; gap: 8px; }
+    .rmd-switch-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
     .rmd-switch-tab {
       flex: 1; padding: 10px 4px; border-radius: 12px;
-      font-size: 0.95rem; font-weight: 600;
+      font-size: 0.95rem; font-weight: 600; font-family: inherit;
       border: 1px solid var(--color-border); background: #fff; color: var(--color-text-sub);
       cursor: pointer; -webkit-tap-highlight-color: transparent;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -40,120 +56,195 @@
       color: var(--color-primary-dk); font-weight: 700;
     }
 
-    /* --- ON/OFF トグル --- */
-    .rmd-toggle-row {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      margin-bottom: 0;
-    }
-    .rmd-toggle-label { font-size: 1rem; font-weight: 700; }
-    .rmd-toggle {
-      position: relative; flex: 0 0 auto;
-      width: 108px; height: 40px; border-radius: 999px;
-      border: 1px solid var(--color-border); background: #eef1f5;
-      cursor: pointer; -webkit-tap-highlight-color: transparent;
-      font: inherit; font-size: 0.85rem; font-weight: 700; color: var(--color-text-sub);
-      transition: background 0.15s, border-color 0.15s, color 0.15s;
-    }
-    .rmd-toggle .rmd-toggle-knob {
-      position: absolute; top: 3px; left: 3px;
-      width: 32px; height: 32px; border-radius: 50%;
-      background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-      transition: left 0.15s;
-    }
-    .rmd-toggle .rmd-toggle-text { position: absolute; top: 0; right: 14px; line-height: 38px; }
-    .rmd-toggle.on {
-      background: var(--color-primary); border-color: var(--color-primary); color: #fff;
-    }
-    .rmd-toggle.on .rmd-toggle-knob { left: 73px; }
-    .rmd-toggle.on .rmd-toggle-text { right: auto; left: 14px; }
+    /* --- 店名と説明 --- */
+    .rmd-store-line { font-size: 0.95rem; font-weight: 700; }
+    .rmd-store-lead { font-size: 0.82rem; color: var(--color-text-sub); margin-top: 6px; line-height: 1.6; }
 
-    /* --- 送信タイミングのカード --- */
-    .rmd-sched {
-      border: 1px solid var(--color-border); border-radius: 12px;
-      padding: 12px; margin-bottom: 10px; background: #fcfdfe;
+    /* 準備中（reminder_settings.is_enabled = false）の告知 */
+    .rmd-pending {
+      margin-top: 10px; border-radius: 10px; padding: 10px 12px;
+      background: #f3f4f6; border: 1px solid #e5e7eb;
+      font-size: 0.82rem; line-height: 1.7; color: #4b5563;
     }
-    .rmd-sched.off { background: #f5f7fa; }
-    .rmd-sched-head {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px;
+    .rmd-pending b { display: block; color: #374151; font-size: 0.86rem; margin-bottom: 2px; }
+
+    /* --- メッセージカード（一覧） --- */
+    .rmd-cards { margin-bottom: 14px; }
+    .rmd-card {
+      display: block; width: 100%; text-align: left;
+      background: #fff; border: 1px solid var(--color-border); border-radius: 16px;
+      padding: 14px; margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      font-family: inherit; color: var(--color-text);
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
     }
-    .rmd-sched-cap { font-size: 0.8rem; font-weight: 700; color: var(--color-text-sub); }
+    .rmd-card:active { transform: scale(0.99); }
+    /* 準備中の店は、配信されないことが一目で分かるよう淡くする */
+    .rmd-card.pending { opacity: 0.65; }
+    .rmd-card-msg {
+      font-size: 0.92rem; line-height: 1.6; font-weight: 600;
+      white-space: pre-line;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    .rmd-card-meta {
+      font-size: 0.8rem; color: var(--color-text-sub); margin-top: 6px;
+    }
+    .rmd-card-foot {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .rmd-card-chevron { margin-left: auto; color: #b0b8c4; font-size: 1.1rem; line-height: 1; }
+
+    /* バッジ。文言と色だけで区別する（絵文字は付けない） */
+    .rmd-badge {
+      border-radius: 999px; padding: 4px 12px;
+      font-size: 0.75rem; font-weight: 700; white-space: nowrap;
+    }
+    .rmd-badge.recurring { background: #E1F5EE; color: #0F6E56; }
+    .rmd-badge.once      { background: #FAEEDA; color: #854F0B; }
+    /* 店全体がまだ開始していない（reminder_settings.is_enabled=false） */
+    .rmd-badge.pending   { background: #eef1f5; color: var(--color-text-sub); }
+    /* 行単位で止まっている（reminder_schedules.is_enabled=false） */
+    .rmd-badge.paused    { background: #eef1f5; color: var(--color-text-sub); }
+
+    /* --- 今月の見込み通数 --- */
+    .rmd-quota {
+      border-radius: 10px; padding: 12px;
+      background: #f0fdf4; color: #166534;
+      font-size: 0.9rem; font-weight: 700;
+    }
+    .rmd-quota.warn { background: #fff3cd; color: var(--color-warning); border: 1px solid #ffc107; }
+    .rmd-quota-sub { font-size: 0.75rem; font-weight: 600; opacity: 0.85; margin-top: 4px; }
+
+    /* --- 操作ボタン --- */
+    .rmd-actions { display: flex; flex-direction: column; gap: 10px; }
+
+    /* ===================================================================
+       画面B（作成・編集）
+    =================================================================== */
+
+    /* 配信のしかたの2択 */
+    .rmd-seg { display: flex; gap: 8px; }
+    .rmd-seg-btn {
+      flex: 1; padding: 12px 6px; border-radius: 12px;
+      font-size: 0.92rem; font-weight: 700; font-family: inherit;
+      border: 1px solid var(--color-border); background: #fff; color: var(--color-text-sub);
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    .rmd-seg-btn[data-kind="recurring"].on { background: #0F6E56; color: #E1F5EE; border-color: #0F6E56; }
+    .rmd-seg-btn[data-kind="once"].on      { background: #854F0B; color: #FAEEDA; border-color: #854F0B; }
+    .rmd-seg-btn:disabled { cursor: not-allowed; }
+    /* 編集中は種別を変えられない。選択中の側は色を保ったまま薄くしない */
+    .rmd-seg-btn:disabled:not(.on) { opacity: 0.4; }
+
+    /* 入力の並び */
+    .rmd-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .rmd-inline-cap { font-size: 0.85rem; font-weight: 700; color: var(--color-text-sub); }
     .rmd-select {
-      height: 40px; padding: 0 28px 0 10px;
+      height: 44px; padding: 0 28px 0 12px;
       border: 1px solid var(--color-border); border-radius: 8px;
-      background: #fff; color: var(--color-text); font-size: 0.92rem; font-family: inherit;
+      background: #fff; color: var(--color-text); font-size: 0.95rem; font-family: inherit;
       appearance: none; -webkit-appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 8px center;
     }
-    .rmd-sched-del {
-      margin-left: auto; flex: 0 0 auto;
-      border: 1px solid var(--color-border); background: #fff; color: var(--color-danger);
-      border-radius: 8px; padding: 8px 12px; font-size: 0.82rem; font-weight: 700;
-      cursor: pointer; font-family: inherit; -webkit-tap-highlight-color: transparent;
+    .rmd-select-wide { width: 100%; }
+    .rmd-date {
+      flex: 1; min-width: 150px;
+      padding-right: 12px; background-image: none;
     }
-    .rmd-badge-off {
-      background: #eef1f5; color: var(--color-text-sub);
-      border-radius: 999px; padding: 2px 10px; font-size: 0.72rem; font-weight: 700;
+
+    /* 配信日時の説明ボックス */
+    .rmd-when-box {
+      margin-top: 12px; border-radius: 10px; padding: 12px;
+      font-size: 0.85rem; font-weight: 600; line-height: 1.8;
     }
+    .rmd-when-box.recurring { background: #E1F5EE; color: #0F6E56; }
+    .rmd-when-box.once      { background: #FAEEDA; color: #854F0B; }
+    .rmd-when-box.muted     { background: #f3f4f6; color: #4b5563; font-weight: 500; }
+
     .rmd-textarea {
-      width: 100%; min-height: 92px; resize: vertical;
+      width: 100%; resize: vertical;
       border: 1px solid var(--color-border); border-radius: 8px;
-      padding: 10px 12px; font-size: 0.92rem; font-family: inherit; line-height: 1.6;
+      padding: 12px; font-size: 0.95rem; font-family: inherit; line-height: 1.7;
       background: #fff; color: var(--color-text);
     }
     .rmd-textarea.input-error { border-color: var(--color-danger); background: #fff5f5; }
-    .rmd-ph-hint { font-size: 0.72rem; color: var(--color-text-sub); margin-top: 6px; line-height: 1.6; }
-    .rmd-add {
-      display: block; width: 100%; margin-top: 4px;
-      border: 1.5px dashed var(--color-primary); background: #fff;
-      color: var(--color-primary-dk); border-radius: 12px;
-      padding: 12px; font-size: 0.9rem; font-weight: 700; font-family: inherit;
+
+    /* プレビュー（LINEのトーク画面風） */
+    .rmd-pv { display: flex; align-items: flex-start; gap: 8px; }
+    .rmd-pv-avatar {
+      flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+      background: #d1d5db;
+    }
+    .rmd-pv-bubble {
+      position: relative; max-width: 100%;
+      background: #fff; border: 1px solid var(--color-border); border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 0.9rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+    }
+    .rmd-pv-url { color: #1a73e8; text-decoration: underline; }
+
+    /* ===================================================================
+       画面C（配信済み）
+    =================================================================== */
+
+    .rmd-hist {
+      background: #fff; border: 1px solid var(--color-border); border-radius: 16px;
+      padding: 14px; margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .rmd-hist-msg {
+      font-size: 0.92rem; line-height: 1.6; font-weight: 600;
+      white-space: pre-line;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    .rmd-hist-meta { font-size: 0.8rem; color: var(--color-text-sub); margin-top: 6px; }
+    .rmd-hist-foot {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .rmd-hist-kind {
+      margin-left: auto; font-size: 0.75rem; color: var(--color-text-sub);
+    }
+    .rmd-hist-badge {
+      border-radius: 999px; padding: 4px 12px;
+      font-size: 0.75rem; font-weight: 700; white-space: nowrap;
+    }
+    .rmd-hist-badge.sent      { background: #E1F5EE; color: #0F6E56; }
+    .rmd-hist-badge.failed    { background: #FCEBEB; color: #A32D2D; }
+    .rmd-hist-badge.no_target { background: #eef1f5; color: var(--color-text-sub); }
+    .rmd-hist-badge.sending   { background: #eef1f5; color: var(--color-text-sub); }
+
+    /* ===================================================================
+       削除の確認モーダル
+    =================================================================== */
+
+    /* 消すものを見せてから消す。ボタンだけの confirm では何を消すか分からない */
+    .rmd-del-excerpt {
+      font-size: 0.9rem; line-height: 1.6; white-space: pre-line;
+      background: #f8fafc; border-radius: 10px; padding: 10px 12px;
+      margin-bottom: 14px;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+      overflow: hidden;
+    }
+    .rmd-del-effect {
+      background: #FCEBEB; color: #A32D2D; border-radius: 10px; padding: 10px 12px;
+      font-size: 0.82rem; font-weight: 600; line-height: 1.7; margin-bottom: 18px;
+    }
+    /* 縦並び。押し間違いを避けるため「やめる」を上に置く */
+    .rmd-modal-actions { flex-direction: column; }
+
+    /* 破壊的な操作だが、濃い赤の塗りつぶしにはしない（威圧しすぎない） */
+    .rmd-btn-delete {
+      display: block; width: 100%;
+      padding: 14px 16px; border: none; border-radius: var(--radius-btn);
+      background: #FCEBEB; color: #A32D2D;
+      font-size: 1rem; font-weight: 600; font-family: inherit;
       cursor: pointer; -webkit-tap-highlight-color: transparent;
     }
-
-    /* --- 次回送信予定 --- */
-    .rmd-next-item {
-      display: flex; align-items: baseline; gap: 8px;
-      padding: 9px 0; font-size: 0.9rem; border-top: 1px solid var(--color-border);
-    }
-    .rmd-next-item:first-child { border-top: none; }
-    .rmd-next-when { font-weight: 700; }
-    .rmd-next-who { color: var(--color-text-sub); font-size: 0.82rem; margin-left: auto; white-space: nowrap; }
-    .rmd-quota {
-      margin-top: 12px; border-radius: 10px; padding: 10px 12px;
-      background: #f0fdf4; color: #166534; font-size: 0.85rem; font-weight: 700;
-    }
-    .rmd-quota.warn { background: #fff3cd; color: var(--color-warning); border: 1px solid #ffc107; }
-
-    /* --- 操作ボタン --- */
-    .rmd-actions { display: flex; flex-direction: column; gap: 10px; }
-    .rmd-actions .rmd-actions-2 { display: flex; gap: 10px; }
-    .rmd-actions .rmd-actions-2 > button { flex: 1; }
-
-    /* --- 送信履歴 --- */
-    .rmd-log {
-      padding: 10px 0; border-top: 1px solid var(--color-border);
-    }
-    .rmd-log:first-child { border-top: none; }
-    .rmd-log-when {
-      display: flex; align-items: baseline; gap: 8px;
-      font-size: 0.88rem; font-weight: 600;
-    }
-    .rmd-log-status {
-      margin-left: auto; flex: 0 0 auto; white-space: nowrap;
-      font-size: 0.72rem; font-weight: 700;
-      border-radius: 999px; padding: 2px 10px;
-      background: #eef1f5; color: var(--color-text-sub);
-    }
-    .rmd-log-status.sent      { background: #e8f8ee; color: var(--color-primary-dk); }
-    .rmd-log-status.failed    { background: #fdecea; color: var(--color-danger); }
-    .rmd-log-status.sending   { background: #fff3cd; color: var(--color-warning); }
-    .rmd-log-sub { color: var(--color-text-sub); font-size: 0.8rem; margin-top: 2px; }
-    .rmd-log-err {
-      margin-top: 6px; padding: 8px 10px; border-radius: 8px;
-      background: #fdecea; color: var(--color-danger);
-      font-size: 0.78rem; line-height: 1.6; white-space: pre-line;
-    }
+    .rmd-btn-delete:active { transform: scale(0.97); }
+    .rmd-btn-delete:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
     /* --- ガード画面（manager-home と同じ作法） --- */
     #screen-not-manager.active,
@@ -172,78 +263,154 @@
   ============================================================ -->
   <section id="screen-loading" class="screen active">
     <p class="loading-logo">アレグリア</p>
-    <p class="loading-sub">提出リマインド設定</p>
+    <p class="loading-sub">提出リマインド</p>
     <div class="spinner" role="status" aria-label="読み込み中"></div>
   </section>
 
   <!-- ===========================================================
-       画面2: リマインド設定（本体）
+       画面A: 一覧（この画面がリマインドの入口）
   ============================================================ -->
-  <section id="screen-main" class="screen">
+  <section id="screen-list" class="screen">
     <header class="screen-header">
-      <h1>🔔 提出リマインド</h1>
-      <p class="screen-subtitle" id="rmd-store-name"></p>
+      <button type="button" class="rmd-head-back" id="rmd-back-top" aria-label="店長トップへ戻る">‹</button>
+      <h1>提出リマインド</h1>
     </header>
     <div class="screen-body">
 
       <!-- 店舗切替（掛け持ち店長のときだけ表示） -->
-      <div id="rmd-store-switch" class="rmd-panel" style="display:none"></div>
+      <div id="rmd-store-switch" style="display:none"></div>
 
-      <!-- ON / OFF -->
+      <!-- 店名・人数・説明／準備中の告知 -->
       <div class="rmd-panel">
-        <div class="rmd-toggle-row">
-          <span class="rmd-toggle-label">提出リマインド</span>
-          <button type="button" id="rmd-toggle" class="rmd-toggle" aria-pressed="false">
-            <span class="rmd-toggle-knob" aria-hidden="true"></span>
-            <span class="rmd-toggle-text">OFF</span>
-          </button>
+        <p class="rmd-store-line" id="rmd-store-line"></p>
+        <p class="rmd-store-lead" id="rmd-store-lead" style="display:none"></p>
+        <div class="rmd-pending" id="rmd-pending" style="display:none">
+          <b>準備中です</b>
+          このお店ではまだ配信は始まっていません。<br>
+          設定の保存はできます。開始日はご相談ください。
         </div>
-        <p class="rmd-panel-note" id="rmd-toggle-note"></p>
       </div>
 
-      <!-- 送信タイミング -->
-      <div class="rmd-panel">
-        <p class="rmd-panel-title">⏰ 送信タイミング</p>
-        <div id="rmd-sched-list"></div>
-        <button type="button" id="rmd-add" class="rmd-add">＋ タイミングを追加</button>
-      </div>
+      <!-- メッセージ一覧 -->
+      <div class="rmd-cards" id="rmd-cards"></div>
 
-      <!-- 次回送信予定・通数見込み -->
-      <div class="rmd-panel">
-        <p class="rmd-panel-title">📅 次回送信予定</p>
-        <div id="rmd-next"></div>
+      <!-- 今月の見込み通数（権限を持つ全店の合計。テスト店は除く） -->
+      <div class="rmd-panel" id="rmd-quota-panel" style="display:none">
+        <div class="rmd-quota" id="rmd-quota"></div>
       </div>
 
       <!-- 操作 -->
-      <div class="rmd-panel">
-        <div class="rmd-actions">
-          <button type="button" id="rmd-save" class="btn-primary">保存</button>
-          <div class="rmd-actions-2">
-            <button type="button" id="rmd-test" class="btn-secondary btn-sm">自分にテスト送信</button>
-            <button type="button" id="rmd-now" class="btn-secondary btn-sm">今すぐ送る</button>
-          </div>
-        </div>
-        <p class="rmd-panel-note" id="rmd-send-note" style="display:none"></p>
-        <div id="rmd-action-msg"></div>
-        <p class="rmd-panel-note">
-          「自分にテスト送信」はログイン中のご自身にだけ届きます。<br>
-          「今すぐ送る」は対象者全員にLINEが届きます。
-        </p>
+      <div class="rmd-actions">
+        <button type="button" class="btn-primary"   id="rmd-create">メッセージを作成</button>
+        <button type="button" class="btn-secondary" id="rmd-sent">配信済みを見る</button>
+        <button type="button" class="btn-secondary" id="rmd-back">店長トップへ戻る</button>
       </div>
-
-      <!-- 送信履歴 -->
-      <div class="rmd-panel">
-        <p class="rmd-panel-title">📜 送信履歴（直近5件）</p>
-        <div id="rmd-logs"><p class="loading-text">読み込み中…</p></div>
-      </div>
-
-      <button class="btn-secondary" id="rmd-back">店長トップへ戻る</button>
 
     </div>
   </section>
 
   <!-- ===========================================================
-       画面3: スタッフが開いたとき（店長専用ガード）
+       画面B: 作成・編集
+  ============================================================ -->
+  <section id="screen-edit" class="screen">
+    <header class="screen-header">
+      <button type="button" class="rmd-head-back" id="rmd-edit-back" aria-label="一覧へ戻る">‹</button>
+      <h1 id="rmd-edit-title">メッセージを作成</h1>
+      <p class="screen-subtitle" id="rmd-edit-store"></p>
+    </header>
+    <div class="screen-body">
+
+      <!-- 配信のしかた -->
+      <div class="rmd-panel">
+        <p class="rmd-field-label">配信のしかた</p>
+        <div class="rmd-seg" id="rmd-kind">
+          <button type="button" class="rmd-seg-btn" data-kind="recurring">毎回くり返す</button>
+          <button type="button" class="rmd-seg-btn" data-kind="once">今回だけ</button>
+        </div>
+        <p class="rmd-panel-note" id="rmd-kind-note" style="display:none">
+          配信のしかたは、作成したあとは変更できません。<br>
+          変えたいときは、このメッセージを削除して作り直してください。
+        </p>
+      </div>
+
+      <!-- 配信日時 -->
+      <div class="rmd-panel">
+        <p class="rmd-field-label">配信日時</p>
+
+        <!-- 毎回くり返す -->
+        <div class="rmd-inline" id="rmd-when-recurring">
+          <span class="rmd-inline-cap">締切の</span>
+          <select class="rmd-select" id="rmd-days" aria-label="締切の何日前"></select>
+          <select class="rmd-select" id="rmd-hour" aria-label="配信時刻"></select>
+        </div>
+
+        <!-- 今回だけ -->
+        <div class="rmd-inline" id="rmd-when-once">
+          <input type="date" class="rmd-select rmd-date" id="rmd-date" aria-label="配信日">
+          <select class="rmd-select" id="rmd-hour-once" aria-label="配信時刻"></select>
+        </div>
+
+        <div id="rmd-when-box"></div>
+      </div>
+
+      <!-- 配信先 -->
+      <div class="rmd-panel">
+        <p class="rmd-field-label">配信先</p>
+        <select class="rmd-select rmd-select-wide" id="rmd-target">
+          <option value="all">全員</option>
+          <option value="unsubmitted">未提出の人だけ</option>
+        </select>
+        <p class="rmd-panel-note" id="rmd-target-note"></p>
+      </div>
+
+      <!-- メッセージ -->
+      <div class="rmd-panel">
+        <p class="rmd-field-label">メッセージ</p>
+        <textarea id="rmd-msg" class="rmd-textarea" rows="8" maxlength="500"
+          placeholder="スタッフに送る文面を入力してください"></textarea>
+        <p class="rmd-panel-note">
+          {名前} {期間} {締切} {URL} が使えます（配信時に自動で置き換わります）
+        </p>
+      </div>
+
+      <!-- プレビュー -->
+      <div class="rmd-panel">
+        <p class="rmd-field-label">スタッフにはこう届きます</p>
+        <div class="rmd-pv">
+          <div class="rmd-pv-avatar" aria-hidden="true"></div>
+          <div class="rmd-pv-bubble" id="rmd-preview"></div>
+        </div>
+        <p class="rmd-panel-note" id="rmd-preview-note" style="display:none"></p>
+      </div>
+
+      <div id="rmd-edit-msg"></div>
+
+      <div class="rmd-actions">
+        <button type="button" class="btn-primary"     id="rmd-save">保存</button>
+        <button type="button" class="rmd-btn-delete"  id="rmd-delete">このメッセージを削除</button>
+        <button type="button" class="btn-secondary"   id="rmd-edit-back2">一覧へ戻る</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===========================================================
+       画面C: 配信済み
+  ============================================================ -->
+  <section id="screen-sent" class="screen">
+    <header class="screen-header">
+      <button type="button" class="rmd-head-back" id="rmd-sent-back" aria-label="一覧へ戻る">‹</button>
+      <h1>配信済み</h1>
+      <p class="screen-subtitle" id="rmd-sent-store"></p>
+    </header>
+    <div class="screen-body">
+      <div id="rmd-sent-list"></div>
+      <button type="button" class="btn-secondary" id="rmd-sent-back2">一覧へ戻る</button>
+    </div>
+  </section>
+
+  <!-- ===========================================================
+       画面: スタッフが開いたとき（店長専用ガード）
   ============================================================ -->
   <section id="screen-not-manager" class="screen">
     <div class="error-icon">🔒</div>
@@ -257,7 +424,7 @@
   </section>
 
   <!-- ===========================================================
-       画面4: 未紐付け
+       画面: 未紐付け
   ============================================================ -->
   <section id="screen-unlinked" class="screen">
     <div class="error-icon">📝</div>
@@ -272,7 +439,7 @@
   </section>
 
   <!-- ===========================================================
-       画面5: エラー画面
+       画面: エラー
   ============================================================ -->
   <section id="screen-error" class="screen">
     <div class="error-icon">⚠️</div>
@@ -283,13 +450,17 @@
     </button>
   </section>
 
-  <!-- 送信タイミングが2つ以上あるときに「今すぐ送る」対象を選ぶモーダル -->
-  <div id="rmd-pick-modal" class="modal-overlay">
+  <!-- ===========================================================
+       削除の確認（confirm() は使わない。文面と影響を見せてから消す）
+  ============================================================ -->
+  <div id="rmd-del-modal" class="modal-overlay">
     <div class="modal-box">
-      <p class="modal-title">どのタイミングの文面を送りますか？</p>
-      <div id="rmd-pick-list" class="rmd-actions" style="margin-bottom:14px"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn-secondary" id="rmd-pick-cancel">キャンセル</button>
+      <p class="modal-title">このメッセージを削除しますか</p>
+      <p class="rmd-del-excerpt" id="rmd-del-excerpt"></p>
+      <div class="rmd-del-effect" id="rmd-del-effect"></div>
+      <div class="modal-actions rmd-modal-actions">
+        <button type="button" class="btn-secondary" id="rmd-del-cancel">やめる</button>
+        <button type="button" class="rmd-btn-delete" id="rmd-del-ok">削除する</button>
       </div>
     </div>
   </div>
@@ -303,14 +474,15 @@
          2. config_v2.js  ← CONFIG_V2
          3. api_v2.js     ← SupaAPI（認証・IDトークン自動取り直しはここに入っている）
          4. reminder.js   ← RmdState, Reminder, initApp
-       ※ config_v2.js / api_v2.js の ?v= は既存ページと同じ値のまま。
+       ※ config_v2.js / api_v2.js / style.css の ?v= は既存ページと同じ値のまま。
           ここで上げると他ページのキャッシュまで巻き添えで落とすため触らない。
+          中身を差し替えた reminder.js だけ上げる。
   ============================================================ -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260726-v6-idtoken-refresh"></script>
-  <script src="js/reminder.js?v=20260731-v1-reminder"></script>
+  <script src="js/reminder.js?v=20260804-v3-relist"></script>
 
 </body>
 </html>

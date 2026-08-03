@@ -1,33 +1,52 @@
 /**
- * アレグリア シフト管理ツール - 提出リマインド設定（reminder.html 専用）
+ * アレグリア シフト管理ツール - 提出リマインド（reminder.html 専用）
  *
- * 店長が「締切の何日前・何時に・誰に・どんな文面で」LINEを送るかを設定する画面。
- * これまで店長がLINE公式アカウントのアプリ側で手作業で組んでいた配信予約を、
- * このアプリの中で完結させる。
+ * 店長が「いつ・誰に・どんな文面で」LINEを送るかを設定する画面。
+ * 画面は3つ構成:
+ *   画面A … 予定されているメッセージの一覧
+ *   画面B … 作成・編集（削除もここから）
+ *   画面C … 配信済み（get_reminder_history を読むだけ）
  *
  * 設計上の約束（既存の動いている仕組みを壊さないための線引き）:
  *   - 認証は api_v2.js の SupaAPI をそのまま使う。ここで独自にトークンを取りに
  *     行かない。IDトークンの期限切れ自動取り直し（_forceRelogin）は SupaAPI 側に
  *     入っているので、SupaAPI.login() を通す限りその恩恵をそのまま受けられる。
- *   - 期間セレクタは作らない。この画面が見るのは status='open' の直近1期間だけ。
+ *   - この画面から送信は起動できない。send-reminders は呼ばない。
+ *     「自分にテスト送信」「今すぐ送る」は廃止（Edge Function 側でも該当モードを
+ *     削除済みで、呼んでも403が返る）。送信ボタンを作らないこと自体が仕様。
+ *   - get_reminder_targets は呼ばない（LINE IDを返す運営専用関数。実行権限もない）。
+ *   - store_line_credentials は読まない（service_role専用）。
+ *   - reminder_logs は直接SELECTしない。配信の記録は get_reminder_history を通す
+ *     （何を店長に見せてよいかの線引きは関数側に一本化されている）。
+ *   - reminder_settings には書き込まない。配信の開始／停止は運営側の作業で、
+ *     店長の画面にトグルは出さない。この画面での is_enabled は読むだけ。
+ *   - 行単位の is_enabled（停止中）も店長には触らせない。表示だけ。
  *   - 対象者の判定はフロントでやらない。人数は必ず get_reminder_preview に聞く
  *     （分母の定義＝include_in_submission=true はDB側に一本化されている）。
- *   - get_reminder_targets は呼ばない（LINE IDを返す運営専用関数。実行権限もない）。
+ *     フロントで数えると店長メニューの提出状況と数字がズレる。
  *   - このページ用の処理はすべてこのファイルに書く。既存JSには一切足さない。
  *
  * ロード順: config_v2.js → api_v2.js → reminder.js
  */
 
-// リマインド送信 Edge Function。config_v2.js（既存ファイル）は変更しない方針なので
-// このページ専用の定数としてここに置く。
-const REMINDER_FN_URL = CONFIG_V2.SUPABASE_URL + '/functions/v1/send-reminders';
-
-// 店長トップへの戻り先。?v= はこの画面の追加に合わせたキャッシュバスター。
+// 店長トップへの戻り先。?v= は manager-home.html 側の現行値に合わせる。
 const MANAGER_HOME_URL = 'manager-home.html?v=20260731-v1-reminder';
 
 // LINE無料プランの月間上限200通に対する警告ライン
 const QUOTA_LIMIT = 200;
 const QUOTA_WARN  = 180;
+
+// 見込み通数から除外する店。テスト店は実配信しないので合計に混ぜない。
+const QUOTA_EXCLUDE_STORE_KEYS = ['dummy01'];
+
+// 1か月あたりの提出期間の数。recurring は「毎回の締切ごと」に飛ぶので、
+// 月の見込み通数は 1期間ぶん × この値で見積もる。
+const PERIODS_PER_MONTH = 2;
+
+// 締切ルールの既定値（store_settings に行が無い店のフォールバック）。
+// 前半（1日〜15日）の締切=前月25日 / 後半（16日〜末日）の締切=当月10日。
+const DEFAULT_FIRST_HALF_DEADLINE  = 25;
+const DEFAULT_SECOND_HALF_DEADLINE = 10;
 
 // 選択肢は増やさない（店長がIT非リテラシー前提。初期値のまま正しく動くことを優先）
 const DAYS_BEFORE_OPTIONS = [
@@ -44,20 +63,19 @@ const TARGET_OPTIONS = [
   { value: 'unsubmitted', label: '未提出の人だけ' }
 ];
 
-// 送信履歴の表示ラベル（reminder_logs.kind / status）
-const LOG_KIND_LABELS = {
+// 配信済み画面に出す件数。並び順（created_at 降順）は関数側で済んでいる。
+const HISTORY_LIMIT = 10;
+
+// 配信済みの「どうやって送られたか」。
+// manual / test は旧バージョンの記録。いまは作られないが、過去分として表示する。
+const HISTORY_KIND_LABELS = {
   scheduled: '自動',
+  once     : '今回だけ',
   manual   : '手動',
   test     : 'テスト'
 };
-const LOG_STATUS_LABELS = {
-  sending  : '送信中',
-  sent     : '成功',
-  failed   : '失敗',
-  no_target: '対象者なし'
-};
 
-// 新しいタイミングを追加したときの既定文面
+// 新規作成時の既定文面
 const DEFAULT_TEMPLATE =
   '{名前}さん\n' +
   '{期間}のシフト希望の提出期限は {締切} です。\n' +
@@ -73,17 +91,10 @@ const RmdState = {
   displayName: null,
   managed    : [],    // 店長権限(admin/manager)を持つ所属
   storeId    : null,  // 表示中の店舗
-  memberId   : null,  // ログイン中の店長自身の store_members.id（テスト送信の宛先）
-  enabled    : false, // reminder_settings.is_enabled（既定は必ず false）
-  enabledAtLoad: false, // 読み込み直後の is_enabled（変更検知用）
-  hasSettings: false, // reminder_settings に行があるか
-  rows       : [],    // 編集中のタイミング
-  original   : [],    // 読み込み直後のスナップショット（差分計算用）
-  deletedIds : [],    // 保存時にDELETEするID
-  period     : null,  // status='open' の直近1期間
-  preview    : null,  // {target_all, target_unsubmitted, unsubmitted_names}
-  logs       : [],
-  busy       : false  // 保存・送信中の二重実行防止
+  byStore    : {},    // storeId -> { isEnabled, schedules, period, preview, store, settings }
+  loaded     : false,
+  form       : null,  // 画面Bの編集中データ
+  busy       : false  // 保存中の二重実行防止
 };
 
 // ============================================================
@@ -144,6 +155,11 @@ function shortStoreName(membership) {
 // 日時（すべてJST固定。端末のタイムゾーンに依存させない）
 // ------------------------------------------------------------
 
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+// JSTはUTC+9で固定（夏時間なし）。この前提を1か所に置く。
+const JST_OFFSET_HOURS = 9;
+
 /**
  * timestamptz 文字列を Date に正規化する。
  * PostgRESTは "2026-08-10T14:59:00+00:00" だが、経路によっては
@@ -166,54 +182,106 @@ function toJstDateParts(date) {
 }
 
 /**
- * 締切（timestamptz）から「送信予定日時（JST）」を求める。
- *   締切をJSTの暦日に直す → その日から days_before 日を引く → 時刻を当てる
+ * JSTの暦日 {y,m,d} から daysBefore 日引いて、時刻を当てる。
  * 日付の引き算は UTC の暦日として行う（Date.UTC + getUTC*）ので、
  * 実行端末のタイムゾーンがどこでも同じ結果になる。
- * @returns {{y,m,d,dow,hour,minute}|null}
+ * @returns {{y,m,d,hour,minute}}
  */
-function calcSendAt(deadline, daysBefore, hour, minute) {
-  const dl = parseTimestamp(deadline);
-  if (!dl) return null;
-  const p = toJstDateParts(dl);
+function sendAtFromJstDate(p, daysBefore, hour, minute) {
   const base = new Date(Date.UTC(p.y, p.m - 1, p.d));
   base.setUTCDate(base.getUTCDate() - (Number(daysBefore) || 0));
   return {
     y     : base.getUTCFullYear(),
     m     : base.getUTCMonth() + 1,
     d     : base.getUTCDate(),
-    dow   : base.getUTCDay(),
     hour  : Number(hour) || 0,
     minute: Number(minute) || 0
   };
 }
 
-const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
-
-/** calcSendAt() の結果 → "8月10日(月) 12:00" */
-function formatSendAt(s) {
-  if (!s) return '—';
-  return s.m + '月' + s.d + '日(' + WEEKDAYS[s.dow] + ') ' + pad2(s.hour) + ':' + pad2(s.minute);
+/** 締切（timestamptz）から「送信予定日時（JST）」を求める */
+function calcSendAt(deadline, daysBefore, hour, minute) {
+  const dl = parseTimestamp(deadline);
+  if (!dl) return null;
+  return sendAtFromJstDate(toJstDateParts(dl), daysBefore, hour, minute);
 }
 
-/** timestamptz → 日本時間の "8月10日(月) 12:00"（送信履歴用） */
-function formatJstDateTime(ts) {
+/** timestamptz → JSTの {y,m,d,hour,minute}（once の send_at 用） */
+function jstPartsOf(ts) {
   const d = parseTimestamp(ts);
-  if (!d) return String(ts || '—');
+  if (!d) return null;
   const p = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tokyo',
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false
   }).formatToParts(d).reduce((acc, x) => { acc[x.type] = x.value; return acc; }, {});
-  // 曜日はJST暦日から自前で出す（ロケール表記の揺れを避ける）
-  const dow = new Date(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day))).getUTCDay();
-  return Number(p.month) + '月' + Number(p.day) + '日(' + WEEKDAYS[dow] + ') '
-    + p.hour + ':' + p.minute;
+  return {
+    y     : Number(p.year),
+    m     : Number(p.month),
+    d     : Number(p.day),
+    // 24時をまたぐロケール表記（"24:00"）を 0 に寄せる
+    hour  : Number(p.hour) % 24,
+    minute: Number(p.minute)
+  };
 }
 
-/** 締切（timestamptz）→ 日本時間の "8月10日(月) 23:59" */
-function formatDeadline(ts) {
-  return formatJstDateTime(ts);
+/** JSTの暦日 {y,m,d} の曜日（0=日）。端末TZに依存しない。 */
+function jstWeekday(p) {
+  return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay();
+}
+
+/**
+ * JSTの「日付＋時刻」を、実際の時刻（epoch ミリ秒）に直す。
+ * 端末のタイムゾーンを一切参照しないので、海外にいる店長でも同じ結果になる。
+ * @param {string} dateStr 'YYYY-MM-DD'（JSTの暦日）
+ */
+function jstToEpochMs(dateStr, hour, minute) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ''));
+  if (!m) return null;
+  return Date.UTC(
+    Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+    (Number(hour) || 0) - JST_OFFSET_HOURS, Number(minute) || 0
+  );
+}
+
+/** 今日のJST日付 'YYYY-MM-DD'（<input type="date"> の min 用） */
+function jstTodayIso() {
+  const p = toJstDateParts(new Date());
+  return p.y + '-' + pad2(p.m) + '-' + pad2(p.d);
+}
+
+/** {y,m,d,hour,minute} → "2026/08/10 12:00" */
+function formatSendAt(s) {
+  if (!s) return '—';
+  return s.y + '/' + pad2(s.m) + '/' + pad2(s.d) + ' ' + pad2(s.hour) + ':' + pad2(s.minute);
+}
+
+/** {y,m,d,hour,minute} → "8/10 12:00"（削除確認の本文用。年は省く） */
+function formatShortSendAt(s) {
+  if (!s) return '';
+  return s.m + '/' + s.d + ' ' + pad2(s.hour) + ':' + pad2(s.minute);
+}
+
+/** {y,m,d,hour,minute} → "2026/08/08(土) 18:00" */
+function formatSendAtWithDow(s) {
+  if (!s) return '—';
+  return s.y + '/' + pad2(s.m) + '/' + pad2(s.d)
+    + '(' + WEEKDAYS[jstWeekday(s)] + ') '
+    + pad2(s.hour) + ':' + pad2(s.minute);
+}
+
+/** timestamptz → "8月10日(月) 23:59"（プレビューの {締切} 用） */
+function formatDeadlineJa(ts) {
+  const p = jstPartsOf(ts);
+  if (!p) return String(ts || '');
+  return p.m + '月' + p.d + '日(' + WEEKDAYS[jstWeekday(p)] + ') '
+    + pad2(p.hour) + ':' + pad2(p.minute);
+}
+
+/** 並べ替え用のキー。求まらないものは末尾に送る。 */
+function sendAtKey(s) {
+  if (!s) return Number.MAX_SAFE_INTEGER;
+  return Date.UTC(s.y, s.m - 1, s.d, s.hour, s.minute);
 }
 
 // ============================================================
@@ -226,291 +294,454 @@ const Reminder = {
     return RmdState.managed.find(m => m.store_id === RmdState.storeId) || null;
   },
 
+  _storeOf(storeId) {
+    return RmdState.managed.find(m => m.store_id === storeId) || null;
+  },
+
+  _data(storeId) {
+    return RmdState.byStore[storeId] || null;
+  },
+
   // --------------------------------------------------------
   // 読み込み
   // --------------------------------------------------------
 
-  /** ヘッダー（店名）を描画 */
-  _renderHeader() {
-    const store = this._selectedStore();
-    const el = document.getElementById('rmd-store-name');
-    if (el) el.textContent = store ? store.store_name : '';
+  /**
+   * 権限を持つ全店ぶんをまとめて読む。
+   * 見込み通数が「全店の合計」なので、表示中の店だけを読んでも足りない。
+   * 店舗ごとに往復すると掛け持ち店長で遅くなるため、店IDの配列で一括取得し、
+   * 人数のRPCだけ店ごとに呼ぶ。
+   */
+  async loadAll() {
+    const ids = RmdState.managed.map(m => m.store_id);
+    const db  = SupaAPI.db;
+
+    // 器を先に用意しておく（部分的に取れなくても描画が落ちないように）
+    RmdState.byStore = {};
+    ids.forEach(id => {
+      RmdState.byStore[id] = {
+        isEnabled: false, schedules: [], period: null, preview: null,
+        store: null, settings: null
+      };
+    });
+
+    // 1. 配信の開始状況（行が無い店は「準備中」として扱う。ここでは書き込まない）
+    const st = await db.from('reminder_settings')
+      .select('store_id, is_enabled')
+      .in('store_id', ids);
+    if (st.error) throw new Error('リマインド設定の取得に失敗しました: ' + st.error.message);
+    (st.data || []).forEach(r => {
+      if (RmdState.byStore[r.store_id]) {
+        RmdState.byStore[r.store_id].isEnabled = !!r.is_enabled;
+      }
+    });
+
+    // 2. メッセージ本体
+    const sc = await db.from('reminder_schedules')
+      .select('id, store_id, schedule_type, days_before, send_hour, send_minute, send_at, sent_at, target, message_template, is_enabled, sort_order')
+      .in('store_id', ids)
+      .order('sort_order', { ascending: true });
+    if (sc.error) throw new Error('メッセージの取得に失敗しました: ' + sc.error.message);
+    (sc.data || []).forEach(r => {
+      const bucket = RmdState.byStore[r.store_id];
+      if (!bucket) return;
+      // 1回だけの配信が済んだものは、一覧には出さない（配信済み画面の担当）
+      if (r.schedule_type === 'once' && r.sent_at) return;
+      bucket.schedules.push(r);
+    });
+
+    // 3. 受付中の期間。
+    //    並びは deadline の昇順＝送信側 Edge Function と同じ選び方にする。
+    //    start_date 順にすると、受付中の期間が一時的に2つ存在したときに
+    //    「画面に出ている期間」と「実際に送られる期間」がズレうる。
+    const pe = await db.from('shift_periods')
+      .select('id, store_id, title, deadline, status')
+      .in('store_id', ids)
+      .eq('status', 'open')
+      .order('deadline', { ascending: true });
+    if (pe.error) throw new Error('提出期間の取得に失敗しました: ' + pe.error.message);
+    (pe.data || []).forEach(r => {
+      const bucket = RmdState.byStore[r.store_id];
+      if (!bucket) return;
+      if (!bucket.period) bucket.period = r;   // 締切が最も近い1件だけ使う
+    });
+
+    // 4. 人数（対象者の定義はDB側。フロントで絞り込まない）。
+    //    受付中の期間が無い店は人数を出せないので null のままにする。
+    for (const id of ids) {
+      const bucket = RmdState.byStore[id];
+      if (!bucket.period) continue;
+      const pv = await db.rpc('get_reminder_preview', {
+        p_store_id : id,
+        p_period_id: bucket.period.id
+      });
+      if (pv.error) throw new Error('対象人数の取得に失敗しました: ' + pv.error.message);
+      bucket.preview = Array.isArray(pv.data) ? (pv.data[0] || null) : (pv.data || null);
+    }
+
+    // 5. プレビューの {URL} に差し込む提出画面リンク。
+    //    ここが取れなくても一覧・編集は使えるようにしたいので、失敗しても止めない
+    //    （その場合 {URL} はタグのまま表示し、未設定として注記する）。
+    try {
+      const so = await db.from('stores')
+        .select('id, liff_submit_url')
+        .in('id', ids);
+      if (so.error) throw new Error(so.error.message);
+      (so.data || []).forEach(r => {
+        if (RmdState.byStore[r.id]) RmdState.byStore[r.id].store = r;
+      });
+    } catch (e) {
+      console.warn('[Reminder.loadAll] 提出画面リンクを取得できません:', e);
+    }
+
+    // 6. 締切ルール（「その次」の推定に使う）。取れなければ既定値（25日／10日）。
+    try {
+      const ss = await db.from('store_settings')
+        .select('store_id, first_half_deadline, second_half_deadline')
+        .in('store_id', ids);
+      if (ss.error) throw new Error(ss.error.message);
+      (ss.data || []).forEach(r => {
+        if (RmdState.byStore[r.store_id]) RmdState.byStore[r.store_id].settings = r;
+      });
+    } catch (e) {
+      console.warn('[Reminder.loadAll] 締切ルールを取得できません（既定値を使います）:', e);
+    }
+
+    RmdState.loaded = true;
   },
 
-  /** 店舗切替カード（掛け持ち店長のときだけ表示。manager-home と同じ判定） */
+  async switchStore(storeId) {
+    if (!RmdState.managed.some(m => m.store_id === storeId)) return;
+    if (storeId === RmdState.storeId) return;
+    RmdState.storeId = storeId;
+    this.render();
+  },
+
+  // --------------------------------------------------------
+  // 画面A: 描画
+  // --------------------------------------------------------
+
+  render() {
+    this._renderStoreSwitch();
+    this._renderStoreLine();
+    this._renderCards();
+    this._renderQuota();
+  },
+
+  /** 店舗切替タブ（掛け持ち店長のときだけ表示。manager-home と同じ判定） */
   _renderStoreSwitch() {
-    const card = document.getElementById('rmd-store-switch');
-    if (!card) return;
+    const box = document.getElementById('rmd-store-switch');
+    if (!box) return;
     if (RmdState.managed.length < 2) {
-      card.style.display = 'none';
-      card.innerHTML = '';
+      box.style.display = 'none';
+      box.innerHTML = '';
       return;
     }
-    card.style.display = '';
-    card.innerHTML = `
-      <p class="rmd-switch-title">🏪 店舗を切り替え</p>
-      <div class="rmd-switch-tabs">` +
+    box.style.display = '';
+    box.innerHTML = '<div class="rmd-switch-tabs">' +
       RmdState.managed.map(m => `
         <button type="button" class="rmd-switch-tab${m.store_id === RmdState.storeId ? ' on' : ''}"
           data-store="${escapeHtml(m.store_id)}">${escapeHtml(shortStoreName(m))}</button>
-      `).join('') + `
-      </div>`;
+      `).join('') + '</div>';
 
-    card.querySelectorAll('.rmd-switch-tab').forEach(btn => {
+    box.querySelectorAll('.rmd-switch-tab').forEach(btn => {
       btn.addEventListener('click', () => this.switchStore(btn.dataset.store));
     });
   },
 
-  async switchStore(storeId) {
-    if (RmdState.busy) return;
-    if (!RmdState.managed.some(m => m.store_id === storeId)) return;
-    if (storeId === RmdState.storeId) return;
-    if (this._isDirty() && !confirm('保存していない変更があります。破棄して店舗を切り替えますか？')) {
-      return;
-    }
-    RmdState.storeId = storeId;
-    await this.load();
-  },
-
   /**
-   * 表示中の店舗のデータを読み直す。
-   * 期間は status='open' の直近1件のみ（期間セレクタは作らない）。
+   * 店名・スタッフ人数と、この店の状態の説明。
+   * 準備中（is_enabled=false）の店では「自動で配信されます」と言ってはいけない。
+   * 実際には配信されないため、そのまま出すと店長に誤解を与える。
    */
-  async load() {
-    const storeId = RmdState.storeId;
+  _renderStoreLine() {
+    const store  = this._selectedStore();
+    const data   = this._data(RmdState.storeId);
+    const line   = document.getElementById('rmd-store-line');
+    const lead   = document.getElementById('rmd-store-lead');
+    const pend   = document.getElementById('rmd-pending');
+    if (!line || !lead || !pend) return;
 
-    RmdState.rows       = [];
-    RmdState.original   = [];
-    RmdState.deletedIds = [];
-    RmdState.period     = null;
-    RmdState.preview    = null;
-    RmdState.logs       = [];
-    RmdState.memberId   = null;
+    const staff = data && data.preview ? Number(data.preview.target_all) : null;
+    line.textContent = (store ? store.store_name : '')
+      + (staff == null ? '' : ' ・ スタッフ' + staff + '名');
 
-    this._renderHeader();
-    this._renderStoreSwitch();
-    this._renderActions();   // 読み込み中は期間が未確定なので送信系は止めておく
-    document.getElementById('rmd-sched-list').innerHTML =
-      '<p class="loading-text">読み込み中…</p>';
-    document.getElementById('rmd-next').innerHTML =
-      '<p class="loading-text">読み込み中…</p>';
-    document.getElementById('rmd-logs').innerHTML =
-      '<p class="loading-text">読み込み中…</p>';
-
-    try {
-      const db = SupaAPI.db;
-
-      // 1. ON/OFF（行が無い店もある。作るのは保存時）
-      const st = await db.from('reminder_settings')
-        .select('store_id, is_enabled')
-        .eq('store_id', storeId)
-        .maybeSingle();
-      if (st.error) throw new Error('リマインド設定の取得に失敗しました: ' + st.error.message);
-      // 行が無い店は「OFF」として扱う。ここでも保存時でも、勝手にONにはしない。
-      RmdState.hasSettings   = !!st.data;
-      RmdState.enabled       = st.data ? !!st.data.is_enabled : false;
-      RmdState.enabledAtLoad = RmdState.enabled;
-
-      // 2. 送信タイミング
-      const sc = await db.from('reminder_schedules')
-        .select('id, store_id, days_before, send_hour, send_minute, target, message_template, is_enabled, sort_order')
-        .eq('store_id', storeId)
-        .order('sort_order', { ascending: true });
-      if (sc.error) throw new Error('送信タイミングの取得に失敗しました: ' + sc.error.message);
-      RmdState.rows     = (sc.data || []).map(r => this._toRow(r));
-      RmdState.original = RmdState.rows.map(r => ({ ...r }));
-
-      // 3. 受付中の期間（直近1件だけ）。
-      //    並びは deadline の昇順＝送信側 Edge Function と同じ選び方にする。
-      //    start_date 順にすると、受付中の期間が一時的に2つ存在したときに
-      //    「画面に出ている期間」と「実際に送られる期間」がズレうる。
-      const pe = await db.from('shift_periods')
-        .select('id, store_id, title, start_date, end_date, deadline, status')
-        .eq('store_id', storeId)
-        .eq('status', 'open')
-        .order('deadline', { ascending: true })
-        .limit(1);
-      if (pe.error) throw new Error('提出期間の取得に失敗しました: ' + pe.error.message);
-      RmdState.period = (pe.data || [])[0] || null;
-
-      // 4. 人数（対象者の定義はDB側。フロントで絞り込まない）
-      if (RmdState.period) {
-        const pv = await db.rpc('get_reminder_preview', {
-          p_store_id : storeId,
-          p_period_id: RmdState.period.id
-        });
-        if (pv.error) throw new Error('対象人数の取得に失敗しました: ' + pv.error.message);
-        RmdState.preview = Array.isArray(pv.data) ? (pv.data[0] || null) : (pv.data || null);
-      }
-
-      // 5. ログイン中の店長自身の store_members.id（テスト送信の宛先。他人は選べない）
-      const me = await db.from('store_members')
-        .select('id')
-        .eq('store_id', storeId)
-        .eq('user_id', SupaAPI.user.id)
-        .maybeSingle();
-      if (me.error) throw new Error('メンバー情報の取得に失敗しました: ' + me.error.message);
-      RmdState.memberId = me.data ? me.data.id : null;
-
-      // 6. 送信履歴（参照のみ）。ここが取れなくても設定は使えるようにしたいので、
-      //    失敗しても履歴パネルだけを空にして先へ進む。
-      RmdState.logs = [];
-      let logError = null;
-      try {
-        RmdState.logs = await this._loadLogs(storeId);
-      } catch (e) {
-        console.warn('[Reminder.load] 送信履歴を取得できません:', e);
-        logError = e;
-      }
-
-      this._renderAll();
-      if (logError) {
-        document.getElementById('rmd-logs').innerHTML =
-          `<p class="error-text">${escapeHtml(logError.message)}</p>`;
-      }
-
-    } catch (err) {
-      console.error('[Reminder.load]', err);
-      document.getElementById('rmd-sched-list').innerHTML =
-        `<p class="error-text">${escapeHtml(err.message)}</p>`;
-      document.getElementById('rmd-next').innerHTML = '';
-      document.getElementById('rmd-logs').innerHTML = '';
-    }
+    const enabled = !!(data && data.isEnabled);
+    lead.style.display = enabled ? '' : 'none';
+    lead.textContent   = enabled ? '下のメッセージが自動で配信されます' : '';
+    pend.style.display = enabled ? 'none' : '';
   },
 
-  /**
-   * 送信履歴（直近5件）。reminder_logs は参照のみ（RLSでも店長はSELECTだけ）。
-   * 並び順は created_at の降順。sent_at は送信完了時にしか入らずNULLがありうるため、
-   * 並べ替えのキーには使わない。
-   */
-  async _loadLogs(storeId) {
-    const res = await SupaAPI.db.from('reminder_logs')
-      .select('id, kind, target, status, recipient_count, error, scheduled_for, created_at, sent_at')
-      .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-    if (res.error) throw new Error('送信履歴の取得に失敗しました: ' + res.error.message);
-    return res.data || [];
-  },
+  /** 予定されているメッセージのカード一覧 */
+  _renderCards() {
+    const box = document.getElementById('rmd-cards');
+    if (!box) return;
 
-  /** DBの行 → 画面の行 */
-  _toRow(r) {
-    return {
-      id              : r.id,
-      days_before     : Number(r.days_before) || 0,
-      send_hour       : Number(r.send_hour) || 0,
-      send_minute     : Number(r.send_minute) || 0,
-      target          : r.target === 'unsubmitted' ? 'unsubmitted' : 'all',
-      message_template: r.message_template || '',
-      is_enabled      : r.is_enabled !== false,
-      sort_order      : Number(r.sort_order) || 0
-    };
-  },
+    const data = this._data(RmdState.storeId);
+    if (!data) { box.innerHTML = ''; return; }
 
-  // --------------------------------------------------------
-  // 描画
-  // --------------------------------------------------------
-
-  _renderAll() {
-    this._renderToggle();
-    this._renderSchedules();
-    this._renderNext();
-    this._renderActions();
-    this._renderLogs();
-  },
-
-  /**
-   * 送信系ボタンの活殺。
-   * 受付中の期間が無いと、送っても Edge Function 側が400を返すだけで、
-   * 手前の確認ダイアログも「0名に送信します」という意味のない文言になる。
-   * 送れないことを先に伝えて、ボタン自体を押せなくする。
-   * 設定の編集・保存は期間が無くてもできる（＝［保存］は止めない）。
-   */
-  _renderActions() {
-    const sendable = !!RmdState.period;
-    ['rmd-test', 'rmd-now'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) btn.disabled = !sendable;
-    });
-    const note = document.getElementById('rmd-send-note');
-    if (note) {
-      note.style.display = sendable ? 'none' : '';
-      note.textContent   = sendable ? '' : '受付中の提出期間がないため、いまは送信できません。';
-    }
-  },
-
-  _renderToggle() {
-    const btn  = document.getElementById('rmd-toggle');
-    const note = document.getElementById('rmd-toggle-note');
-    if (!btn) return;
-    btn.classList.toggle('on', RmdState.enabled);
-    btn.setAttribute('aria-pressed', RmdState.enabled ? 'true' : 'false');
-    btn.querySelector('.rmd-toggle-text').textContent = RmdState.enabled ? 'ON' : 'OFF';
-    if (note) {
-      note.textContent = RmdState.enabled
-        ? '下の送信タイミングにそって、自動でLINEが届きます。'
-        : 'いまは自動送信されません。送信タイミングの設定は保存できます。';
-    }
-  },
-
-  _renderSchedules() {
-    const list = document.getElementById('rmd-sched-list');
-    if (!list) return;
-
-    if (!RmdState.rows.length) {
-      list.innerHTML = '<p class="info-text">送信タイミングがまだありません。<br>下の「＋ タイミングを追加」から作成してください。</p>';
+    if (!data.schedules.length) {
+      box.innerHTML = `
+        <div class="rmd-panel">
+          <p class="info-text">
+            予定されているメッセージはありません。<br>
+            下の「メッセージを作成」から追加してください。
+          </p>
+        </div>`;
       return;
     }
 
-    list.innerHTML = RmdState.rows.map((row, i) => {
-      const daysOpts = this._options(
-        DAYS_BEFORE_OPTIONS.map(o => ({ value: o.value, label: o.label })), row.days_before);
-      const hourOpts = this._options(
-        this._hourOptions(row.send_hour, row.send_minute), row.send_hour);
-      const tgtOpts  = this._options(TARGET_OPTIONS, row.target);
+    const pending = !data.isEnabled;
+
+    // 実際に届く順（配信日時の早い順）に並べる。保存順ではない。
+    const items = data.schedules
+      .map(r => ({ row: r, at: this._sendAtOf(r, data.period) }))
+      .sort((a, b) => sendAtKey(a.at) - sendAtKey(b.at));
+
+    box.innerHTML = items.map(it => {
+      const r = it.row;
+
+      // 店全体が未開始のときは「準備中」を優先する。
+      // 店が動いていない以上、行単位の停止は意味を持たないため併記しない。
+      let badges;
+      if (pending) {
+        badges = '<span class="rmd-badge pending">準備中</span>';
+      } else {
+        badges = r.schedule_type === 'once'
+          ? '<span class="rmd-badge once">今回だけ</span>'
+          : '<span class="rmd-badge recurring">毎回くり返す</span>';
+        if (r.is_enabled === false) {
+          badges += '<span class="rmd-badge paused">停止中</span>';
+        }
+      }
+
+      const when = it.at
+        ? formatSendAt(it.at)
+        : '受付中の期間がないため未定';
 
       return `
-        <div class="rmd-sched${row.is_enabled ? '' : ' off'}">
-          <div class="rmd-sched-head">
-            <span class="rmd-sched-cap">締切</span>
-            <select class="rmd-select" data-idx="${i}" data-field="days_before">${daysOpts}</select>
-            <select class="rmd-select" data-idx="${i}" data-field="send_hour">${hourOpts}</select>
-            <span class="rmd-sched-cap">宛先</span>
-            <select class="rmd-select" data-idx="${i}" data-field="target">${tgtOpts}</select>
-            ${row.is_enabled ? '' : '<span class="rmd-badge-off">停止中</span>'}
-            <button type="button" class="rmd-sched-del" data-idx="${i}">削除</button>
+        <button type="button" class="rmd-card${pending ? ' pending' : ''}" data-id="${escapeHtml(r.id)}">
+          <p class="rmd-card-msg">${escapeHtml(r.message_template || '')}</p>
+          <p class="rmd-card-meta">配信先: ${escapeHtml(this._targetLabel(r, data.preview))}</p>
+          <p class="rmd-card-meta">配信日時: ${escapeHtml(when)}</p>
+          <div class="rmd-card-foot">
+            ${badges}
+            <span class="rmd-card-chevron" aria-hidden="true">›</span>
           </div>
-          <span class="field-label">文面</span>
-          <textarea class="rmd-textarea" maxlength="500"
-            data-idx="${i}" data-field="message_template"
-            placeholder="送りたい文面を入力してください">${escapeHtml(row.message_template)}</textarea>
-          <p class="rmd-ph-hint">{名前} {期間} {締切} {URL} が使えます（送信時に自動で置き換わります）</p>
-        </div>`;
+        </button>`;
     }).join('');
 
-    list.querySelectorAll('select[data-field], textarea[data-field]').forEach(el => {
-      const handler = () => {
-        const row   = RmdState.rows[Number(el.dataset.idx)];
-        const field = el.dataset.field;
-        if (!row) return;
-        if (field === 'days_before' || field === 'send_hour') {
-          row[field] = Number(el.value);
-          this._renderNext();
-        } else if (field === 'target') {
-          row.target = el.value;
-          this._renderNext();
+    box.querySelectorAll('.rmd-card').forEach(btn => {
+      btn.addEventListener('click', () => this.openEdit(btn.dataset.id));
+    });
+  },
+
+  /**
+   * その行の配信日時。
+   *   once      … send_at をそのまま（絶対時刻）
+   *   recurring … 受付中の期間の締切から逆算。期間が無ければ求まらない（null）
+   */
+  _sendAtOf(row, period) {
+    if (row.schedule_type === 'once') return jstPartsOf(row.send_at);
+    if (!period) return null;
+    return calcSendAt(period.deadline, row.days_before, row.send_hour, row.send_minute);
+  },
+
+  /** 「全員（18名）」「未提出の人だけ（現在3名）」 */
+  _targetLabel(row, preview) {
+    if (row.target === 'unsubmitted') {
+      const n = preview ? Number(preview.target_unsubmitted) : null;
+      return '未提出の人だけ' + (n == null ? '' : '（現在' + n + '名）');
+    }
+    const n = preview ? Number(preview.target_all) : null;
+    return '全員' + (n == null ? '' : '（' + n + '名）');
+  },
+
+  /** その行が1回の配信で使う通数 */
+  _recipientsOf(row, preview) {
+    if (!preview) return 0;
+    return row.target === 'unsubmitted'
+      ? (Number(preview.target_unsubmitted) || 0)
+      : (Number(preview.target_all) || 0);
+  },
+
+  /**
+   * 今月の見込み通数。権限を持つ全店の合計（テスト店は除く）。
+   *   recurring … 1期間ぶん × 月の期間数
+   *   once      … 今月中に配信予定のものだけ1通ぶん
+   * 停止中の行と、配信済みの once は数えない。
+   */
+  _renderQuota() {
+    const panel = document.getElementById('rmd-quota-panel');
+    const box   = document.getElementById('rmd-quota');
+    if (!panel || !box) return;
+
+    const targets = RmdState.managed.filter(
+      m => !QUOTA_EXCLUDE_STORE_KEYS.includes(m.store_key));
+    if (!targets.length) {
+      panel.style.display = 'none';
+      return;
+    }
+
+    const now = toJstDateParts(new Date());
+    let total = 0;
+
+    targets.forEach(m => {
+      const data = this._data(m.store_id);
+      if (!data) return;
+      data.schedules.forEach(r => {
+        if (r.is_enabled === false) return;
+        const n = this._recipientsOf(r, data.preview);
+        if (r.schedule_type === 'once') {
+          const at = jstPartsOf(r.send_at);
+          if (at && at.y === now.y && at.m === now.m) total += n;
         } else {
-          row.message_template = el.value;
-          el.classList.remove('input-error');
+          total += n * PERIODS_PER_MONTH;
         }
-      };
-      el.addEventListener('change', handler);
-      if (el.tagName === 'TEXTAREA') el.addEventListener('input', handler);
+      });
     });
 
-    list.querySelectorAll('.rmd-sched-del').forEach(btn => {
-      btn.addEventListener('click', () => this.removeRow(Number(btn.dataset.idx)));
+    const warn  = total > QUOTA_WARN;
+    const names = targets.map(m => shortStoreName(m)).join('・');
+
+    panel.style.display = '';
+    box.className   = 'rmd-quota' + (warn ? ' warn' : '');
+    box.innerHTML   = `今月の見込み ${total}通 / ${QUOTA_LIMIT}通
+      <div class="rmd-quota-sub">（${escapeHtml(names)}の合計）</div>`
+      + (warn
+          ? `<div class="rmd-quota-sub">⚠️ LINE無料プランの上限（月${QUOTA_LIMIT}通）に近づいています。</div>`
+          : '');
+  },
+
+  // --------------------------------------------------------
+  // 画面B: 作成・編集
+  // --------------------------------------------------------
+
+  /**
+   * 画面Bを開く。idが無ければ新規作成。
+   * 編集時は配信のしかた（recurring / once）を変更させない。
+   * recurring ⇄ once の変換は send_at / sent_at の制約が絡んで複雑なので、
+   * 変えたいときは削除して作り直す運用にする。
+   */
+  openEdit(scheduleId) {
+    const storeId = RmdState.storeId;
+    const data    = this._data(storeId);
+    const row     = scheduleId && data
+      ? data.schedules.find(r => r.id === scheduleId) : null;
+
+    if (scheduleId && !row) {
+      showToast('メッセージが見つかりませんでした');
+      return;
+    }
+
+    if (row) {
+      const once = row.schedule_type === 'once';
+      const at   = once ? jstPartsOf(row.send_at) : null;
+      RmdState.form = {
+        id          : row.id,
+        storeId     : storeId,
+        isNew       : false,
+        scheduleType: once ? 'once' : 'recurring',
+        daysBefore  : Number(row.days_before) || 0,
+        hour        : once ? (at ? at.hour : 12) : (Number(row.send_hour) || 0),
+        // 分は画面から選べない（00分のみ）。既存行が持っている値は勝手に変えない。
+        minute      : once ? (at ? at.minute : 0) : (Number(row.send_minute) || 0),
+        dateStr     : at ? (at.y + '-' + pad2(at.m) + '-' + pad2(at.d)) : '',
+        target      : row.target === 'unsubmitted' ? 'unsubmitted' : 'all',
+        message     : row.message_template || '',
+        sortOrder   : Number(row.sort_order) || 0
+      };
+    } else {
+      const maxSort = (data && data.schedules.length)
+        ? Math.max.apply(null, data.schedules.map(r => Number(r.sort_order) || 0))
+        : -1;
+      RmdState.form = {
+        id          : null,
+        storeId     : storeId,
+        isNew       : true,
+        scheduleType: 'recurring',
+        daysBefore  : 0,
+        hour        : 12,
+        minute      : 0,
+        dateStr     : '',
+        target      : 'all',
+        message     : DEFAULT_TEMPLATE,
+        sortOrder   : maxSort + 1
+      };
+    }
+
+    this._editMessage('');
+    this._renderEdit();
+    showScreen('edit');
+  },
+
+  _renderEdit() {
+    const form  = RmdState.form;
+    if (!form) return;
+    const store = this._storeOf(form.storeId);
+
+    const title = document.getElementById('rmd-edit-title');
+    if (title) title.textContent = form.isNew ? 'メッセージを作成' : 'メッセージを編集';
+    const sub = document.getElementById('rmd-edit-store');
+    if (sub) sub.textContent = store ? store.store_name : '';
+
+    // 配信のしかた。編集中は変更させない。
+    document.querySelectorAll('#rmd-kind .rmd-seg-btn').forEach(btn => {
+      btn.classList.toggle('on', btn.dataset.kind === form.scheduleType);
+      btn.disabled = !form.isNew;
     });
+    const kindNote = document.getElementById('rmd-kind-note');
+    if (kindNote) kindNote.style.display = form.isNew ? 'none' : '';
+
+    this._renderWhenFields();
+    this._renderWhenBox();
+
+    const target = document.getElementById('rmd-target');
+    if (target) target.value = form.target;
+    this._renderTargetNote();
+
+    const msg = document.getElementById('rmd-msg');
+    if (msg) {
+      msg.value = form.message;
+      msg.classList.remove('input-error');
+    }
+    this._renderPreview();
+
+    // 削除できるのは保存済みのメッセージだけ。新規作成中は出さない。
+    const del = document.getElementById('rmd-delete');
+    if (del) {
+      del.disabled      = false;
+      del.style.display = form.isNew ? 'none' : '';
+    }
+  },
+
+  /** 配信日時の入力欄（しかたによって出し分ける） */
+  _renderWhenFields() {
+    const form = RmdState.form;
+    const once = form.scheduleType === 'once';
+
+    const recBox  = document.getElementById('rmd-when-recurring');
+    const onceBox = document.getElementById('rmd-when-once');
+    if (recBox)  recBox.style.display  = once ? 'none' : '';
+    if (onceBox) onceBox.style.display = once ? '' : 'none';
+
+    const days = document.getElementById('rmd-days');
+    if (days) {
+      days.innerHTML = this._options(DAYS_BEFORE_OPTIONS, form.daysBefore);
+    }
+
+    const hourOpts = this._hourOptions(form.hour, form.minute);
+    ['rmd-hour', 'rmd-hour-once'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = this._options(hourOpts, form.hour);
+    });
+
+    const date = document.getElementById('rmd-date');
+    if (date) {
+      date.value = form.dateStr || '';
+      // 過去日は選ばせない（保存時にも弾くが、入口で気づけるほうがよい）
+      date.min = jstTodayIso();
+    }
   },
 
   /** <option> を組み立てる（selected付き） */
@@ -522,9 +753,9 @@ const Reminder = {
   },
 
   /**
-   * 時刻の選択肢。分は常に00（選択肢を増やさない方針）だが、
-   * 既存行が一覧に無い時刻・分を持っている場合は、その値を消してしまわないよう
-   * 選択肢として1つだけ足す。
+   * 時刻の選択肢。00分のみ（:30 は出さない方針）。
+   * ただし既存行が一覧に無い時刻・分を持っている場合は、その値を黙って
+   * 書き換えてしまわないよう、その1つだけ選択肢に足す。
    */
   _hourOptions(currentHour, currentMinute) {
     const opts = HOUR_OPTIONS.map(h => ({ value: h, label: pad2(h) + ':00' }));
@@ -538,537 +769,521 @@ const Reminder = {
     return opts;
   },
 
-  /** 次回送信予定と通数見込み */
-  _renderNext() {
-    const box = document.getElementById('rmd-next');
-    if (!box) return;
-
-    if (!RmdState.period) {
-      box.innerHTML = '<p class="info-text">いま受付中の期間がありません。<br>期間が開くと送信予定がここに表示されます。</p>';
-      return;
-    }
-
-    const period = RmdState.period;
-    const pv     = RmdState.preview || {};
-    const all    = Number(pv.target_all) || 0;
-    const unsub  = Number(pv.target_unsubmitted) || 0;
-
-    const active = RmdState.rows.filter(r => r.is_enabled);
-    if (!active.length) {
-      box.innerHTML = `
-        <p class="info-text">送信タイミングがありません。</p>
-        <p class="rmd-panel-note">対象期間: ${escapeHtml(period.title)}（締切 ${escapeHtml(formatDeadline(period.deadline))}）</p>`;
-      return;
-    }
-
-    // 送信日時の早い順に並べて表示（保存順ではなく実際に届く順）
-    const items = active
-      .map(r => ({ row: r, at: calcSendAt(period.deadline, r.days_before, r.send_hour, r.send_minute) }))
-      .sort((a, b) => this._sendAtKey(a.at) - this._sendAtKey(b.at));
-
-    const perPeriod = active.reduce(
-      (sum, r) => sum + (r.target === 'all' ? all : unsub), 0);
-    const monthly = perPeriod * 2;   // 月2期間ぶん
-
-    const rowsHtml = items.map(it => {
-      const who = it.row.target === 'all'
-        ? all + '名'
-        : '未提出のみ（現在' + unsub + '名）';
-      return `
-        <div class="rmd-next-item">
-          <span class="rmd-next-when">${escapeHtml(formatSendAt(it.at))}</span>
-          <span class="rmd-next-who">→ ${escapeHtml(who)}</span>
-        </div>`;
-    }).join('');
-
-    const warn = monthly > QUOTA_WARN;
-    box.innerHTML = rowsHtml + `
-      <div class="rmd-quota${warn ? ' warn' : ''}">
-        今月の使用見込み: ${monthly}通 / ${QUOTA_LIMIT}通
-        ${warn ? '<br>⚠️ LINE無料プランの上限（月' + QUOTA_LIMIT + '通）に近づいています。' : ''}
-      </div>
-      <p class="rmd-panel-note">
-        対象期間: ${escapeHtml(period.title)}（締切 ${escapeHtml(formatDeadline(period.deadline))}）<br>
-        見込みは「1期間ぶん × 2」で計算しています。
-        ${RmdState.enabled ? '' : '<br>※ いまリマインドはOFFのため、実際には送信されません。'}
-      </p>`;
-  },
-
-  /** 送信予定の並べ替え用キー */
-  _sendAtKey(at) {
-    if (!at) return Number.MAX_SAFE_INTEGER;
-    return Date.UTC(at.y, at.m - 1, at.d, at.hour, at.minute);
-  },
-
-  _renderLogs() {
-    const box = document.getElementById('rmd-logs');
-    if (!box) return;
-    if (!RmdState.logs.length) {
-      box.innerHTML = '<p class="info-text">送信履歴はまだありません。</p>';
-      return;
-    }
-    box.innerHTML = RmdState.logs.map(log => {
-      // 送信完了していれば sent_at、まだなら created_at を表示する
-      const when   = formatJstDateTime(log.sent_at || log.created_at);
-      const kind   = LOG_KIND_LABELS[log.kind] || log.kind || '';
-      const status = LOG_STATUS_LABELS[log.status] || log.status || '';
-      const tgt    = log.target === 'unsubmitted' ? '未提出のみ'
-                   : log.target === 'all'         ? '全員' : '';
-      const count  = log.recipient_count == null ? '' : log.recipient_count + '件';
-      const sub    = [kind, tgt, count].filter(Boolean).join(' ・ ');
-
-      // エラー本文は失敗したときだけ出す（成功時に赤字が出ると無用に不安にさせる）
-      const err = (log.status === 'failed' && log.error)
-        ? `<p class="rmd-log-err">${escapeHtml(log.error)}</p>` : '';
-
-      return `
-        <div class="rmd-log">
-          <div class="rmd-log-when">
-            ${escapeHtml(when)}
-            <span class="rmd-log-status ${escapeHtml(log.status || '')}">${escapeHtml(status)}</span>
-          </div>
-          <div class="rmd-log-sub">${escapeHtml(sub)}</div>
-          ${err}
-        </div>`;
-    }).join('');
-  },
-
-  // --------------------------------------------------------
-  // 編集
-  // --------------------------------------------------------
-
-  toggleEnabled() {
-    RmdState.enabled = !RmdState.enabled;
-    this._renderToggle();
-    this._renderNext();
-  },
-
-  addRow() {
-    RmdState.rows.push({
-      id              : null,
-      days_before     : 0,
-      send_hour       : 12,
-      send_minute     : 0,
-      target          : 'all',
-      message_template: DEFAULT_TEMPLATE,
-      is_enabled      : true,
-      sort_order      : RmdState.rows.length
-    });
-    this._renderSchedules();
-    this._renderNext();
-  },
-
-  removeRow(index) {
-    const row = RmdState.rows[index];
-    if (!row) return;
-    if (!confirm('この送信タイミングを削除します。よろしいですか？\n（［保存］を押すまでDBには反映されません）')) return;
-    if (row.id) RmdState.deletedIds.push(row.id);
-    RmdState.rows.splice(index, 1);
-    this._renderSchedules();
-    this._renderNext();
-  },
-
-  /** 未保存の変更があるか */
-  _isDirty() {
-    if (RmdState.deletedIds.length) return true;
-    if (RmdState.rows.length !== RmdState.original.length) return true;
-    if (RmdState.rows.some(r => !r.id)) return true;
-    const byId = {};
-    RmdState.original.forEach(o => { byId[o.id] = o; });
-    return RmdState.rows.some((r, i) => {
-      const o = byId[r.id];
-      if (!o) return true;
-      return o.days_before !== r.days_before
-        || o.send_hour   !== r.send_hour
-        || o.send_minute !== r.send_minute
-        || o.target      !== r.target
-        || o.message_template !== r.message_template
-        || o.is_enabled  !== r.is_enabled
-        || o.sort_order  !== i;
-    }) || this._settingsDirty();
-  },
-
   /**
-   * ON/OFF が読み込み時から変わっているか。
-   * reminder_settings に行が無い店は「OFF」と同じ状態なので、
-   * 行が無いこと自体は「未保存の変更」とは見なさない（保存時に作られる）。
+   * 配信日時の説明ボックス。
+   * 「いつ届くのか」を日時そのもので見せる。相対表現だけだと店長が確認できない。
    */
-  _settingsDirty() {
-    return RmdState.enabled !== RmdState.enabledAtLoad;
+  _renderWhenBox() {
+    const box  = document.getElementById('rmd-when-box');
+    if (!box) return;
+    const form = RmdState.form;
+    const data = this._data(form.storeId);
+
+    if (form.scheduleType === 'once') {
+      if (!form.dateStr) {
+        box.className = 'rmd-when-box muted';
+        box.textContent = '配信日を選んでください。';
+        return;
+      }
+      const at = {
+        y: Number(form.dateStr.slice(0, 4)),
+        m: Number(form.dateStr.slice(5, 7)),
+        d: Number(form.dateStr.slice(8, 10)),
+        hour: form.hour, minute: form.minute
+      };
+      box.className = 'rmd-when-box once';
+      box.innerHTML = escapeHtml(formatSendAtWithDow(at)) + ' に1回だけ<br>'
+        + '配信が終わると一覧から消えます';
+      return;
+    }
+
+    // 毎回くり返す
+    if (!data || !data.period) {
+      box.className = 'rmd-when-box muted';
+      box.textContent = '受付中の提出期間がないため、次回の配信日時はまだ決まりません。'
+        + '期間が開くと自動で決まります。';
+      return;
+    }
+
+    const first  = calcSendAt(data.period.deadline, form.daysBefore, form.hour, form.minute);
+    const nextDl = this._estimateNextDeadline(data);
+    const second = nextDl ? sendAtFromJstDate(nextDl, form.daysBefore, form.hour, form.minute) : null;
+
+    box.className = 'rmd-when-box recurring';
+    box.innerHTML = '次回 ' + escapeHtml(formatSendAt(first)) + '<br>'
+      + (second ? 'その次 ' + escapeHtml(formatSendAt(second)) + '<br>' : '')
+      + '以降もずっと続きます';
+  },
+
+  /**
+   * 次の期間の締切を推定する（「その次」の表示に使う目安）。
+   * 締切は「前半＝前月25日 / 後半＝当月10日」で交互に来るので、
+   *   10日締切 → 同じ月の25日
+   *   25日締切 → 翌月の10日
+   * 日付がどちらにも当てはまらない店（不規則な締切）は推定しない。
+   * @returns {{y,m,d}|null}
+   */
+  _estimateNextDeadline(data) {
+    const p = jstPartsOf(data.period.deadline);
+    if (!p) return null;
+    const s      = data.settings || {};
+    const first  = Number(s.first_half_deadline)  || DEFAULT_FIRST_HALF_DEADLINE;
+    const second = Number(s.second_half_deadline) || DEFAULT_SECOND_HALF_DEADLINE;
+
+    if (p.d === second) return { y: p.y, m: p.m, d: first };
+    if (p.d === first) {
+      return p.m === 12
+        ? { y: p.y + 1, m: 1,       d: second }
+        : { y: p.y,     m: p.m + 1, d: second };
+    }
+    return null;
+  },
+
+  /** 「いま18名に届きます」 */
+  _renderTargetNote() {
+    const note = document.getElementById('rmd-target-note');
+    if (!note) return;
+    const form = RmdState.form;
+    const data = this._data(form.storeId);
+    const pv   = data ? data.preview : null;
+
+    if (!pv) {
+      note.textContent = '受付中の提出期間がないため、いまの人数は表示できません。';
+      return;
+    }
+    const n = form.target === 'unsubmitted'
+      ? (Number(pv.target_unsubmitted) || 0)
+      : (Number(pv.target_all) || 0);
+    note.textContent = 'いま' + n + '名に届きます';
+  },
+
+  /**
+   * プレビュー。タグを実際の値に差し替えて、届く姿をそのまま見せる。
+   * 差し替えられない値（期間が無い・リンク未設定）はタグのまま残し、
+   * 何が足りないかを下に注記する。勝手に埋めると嘘になる。
+   */
+  _renderPreview() {
+    const box  = document.getElementById('rmd-preview');
+    const note = document.getElementById('rmd-preview-note');
+    if (!box) return;
+
+    const form   = RmdState.form;
+    const data   = this._data(form.storeId);
+    const period = data ? data.period : null;
+    const url    = data && data.store ? data.store.liff_submit_url : null;
+
+    let text = String(form.message || '');
+    text = text.split('{名前}').join(RmdState.displayName || 'お名前');
+    if (period) {
+      text = text.split('{期間}').join(period.title || '');
+      text = text.split('{締切}').join(formatDeadlineJa(period.deadline));
+    }
+    if (url) text = text.split('{URL}').join(url);
+
+    let html = escapeHtml(text);
+    if (url) {
+      // URLだけリンク色にする。実際にタップできる必要はないので <a> にはしない。
+      const escUrl = escapeHtml(url);
+      html = html.split(escUrl).join('<span class="rmd-pv-url">' + escUrl + '</span>');
+    }
+    box.innerHTML = html || '<span style="color:#9ca3af">（メッセージが空です）</span>';
+
+    if (note) {
+      const reasons = [];
+      if (!url)    reasons.push('提出画面のリンクが未設定です。{URL} はこのまま送られます。');
+      if (!period) reasons.push('受付中の提出期間がないため、{期間} と {締切} は差し替えできません。');
+      note.style.display = reasons.length ? '' : 'none';
+      note.textContent   = reasons.join(' ');
+    }
   },
 
   // --------------------------------------------------------
-  // 保存
+  // 画面B: 保存
   // --------------------------------------------------------
 
   /**
-   * 一括保存。
-   * 「全削除して全挿入」はしない。id を保持したまま更新することで、
-   * reminder_logs.schedule_id からの参照（送信履歴とのつながり）を切らない。
-   * 発行順は DELETE → UPDATE → INSERT。
-   * unique(store_id, days_before, send_hour, send_minute) と衝突しないよう、
-   * 先に削除して枠を空けてから追加する。
+   * 保存。
+   * DBの形の制約（reminder_schedules_shape_chk）に合わせて、
+   *   recurring … send_at / sent_at は送らない（NULLのまま）
+   *   once      … send_at は必須
+   * を厳密に守る。id は保持したまま更新する（全削除→全挿入はしない）。
+   * reminder_logs.schedule_id からの参照を切らないため。
    */
   async save() {
     if (RmdState.busy) return;
+    const form = RmdState.form;
+    if (!form) return;
 
-    // 重複チェック（DBのunique制約に当てる前にフロントで気づかせる）
-    const seen = {};
-    for (const r of RmdState.rows) {
-      const key = r.days_before + '-' + r.send_hour + '-' + r.send_minute;
-      if (seen[key]) {
-        this._actionMessage('同じタイミングがすでにあります（' +
-          this._labelOf(DAYS_BEFORE_OPTIONS, r.days_before) + ' ' +
-          pad2(r.send_hour) + ':' + pad2(r.send_minute) +
-          '）。日付か時刻を変えてください。', true);
-        return;
-      }
-      seen[key] = true;
-    }
+    const data    = this._data(form.storeId);
+    const message = String(form.message || '').trim();
 
-    // 空の文面は送っても意味がないので弾く
-    const emptyIdx = RmdState.rows.findIndex(r => !String(r.message_template).trim());
-    if (emptyIdx >= 0) {
-      this._actionMessage('文面が空のタイミングがあります。入力してください。', true);
-      const el = document.querySelector(
-        `textarea[data-idx="${emptyIdx}"][data-field="message_template"]`);
+    if (!message) {
+      this._editMessage('メッセージが空です。文面を入力してください。', true);
+      const el = document.getElementById('rmd-msg');
       if (el) { el.classList.add('input-error'); el.focus(); }
       return;
     }
 
+    let sendAtIso = null;
+
+    if (form.scheduleType === 'once') {
+      if (!form.dateStr) {
+        this._editMessage('配信日を選んでください。', true);
+        return;
+      }
+      const ms = jstToEpochMs(form.dateStr, form.hour, form.minute);
+      if (ms == null) {
+        this._editMessage('配信日を正しく選んでください。', true);
+        return;
+      }
+      if (ms <= Date.now()) {
+        this._editMessage('過去の日時は指定できません。', true);
+        return;
+      }
+      // JSTの日付＋時刻をUTCのtimestamptzに変換して保存（端末TZ非依存）
+      sendAtIso = new Date(ms).toISOString();
+
+    } else {
+      // 同じタイミングの重複はDBのunique制約に当たる。手前で気づかせる。
+      const dup = (data ? data.schedules : []).some(r =>
+        r.schedule_type !== 'once'
+        && r.id !== form.id
+        && Number(r.days_before) === Number(form.daysBefore)
+        && Number(r.send_hour)   === Number(form.hour)
+        && Number(r.send_minute) === Number(form.minute));
+      if (dup) {
+        this._editMessage('同じタイミングがすでにあります。日にちか時刻を変えてください。', true);
+        return;
+      }
+    }
+
+    // 送る列を、配信のしかたごとに厳密に組み立てる。
+    // is_enabled と sent_at は画面から触らせない（運営側の管理項目）。
+    const payload = {
+      target          : form.target,
+      message_template: message
+    };
+    if (form.scheduleType === 'once') {
+      payload.send_at = sendAtIso;
+    } else {
+      payload.days_before = Number(form.daysBefore);
+      payload.send_hour   = Number(form.hour);
+      payload.send_minute = Number(form.minute);
+    }
+
     this._setBusy(true, 'save');
-    this._actionMessage('');
+    this._editMessage('');
 
     try {
-      const db      = SupaAPI.db;
-      const storeId = RmdState.storeId;
+      const db = SupaAPI.db;
+      let res;
 
-      // 1. DELETE
-      if (RmdState.deletedIds.length) {
-        const del = await db.from('reminder_schedules')
-          .delete()
-          .eq('store_id', storeId)
-          .in('id', RmdState.deletedIds);
-        if (del.error) throw new Error('削除に失敗しました: ' + del.error.message);
-        RmdState.deletedIds = [];
+      if (form.isNew) {
+        res = await db.from('reminder_schedules').insert(Object.assign({
+          store_id     : form.storeId,
+          schedule_type: form.scheduleType,
+          sort_order   : Number(form.sortOrder) || 0
+        }, payload));
+      } else {
+        // schedule_type は送らない（作成後は変更できない仕様）
+        res = await db.from('reminder_schedules')
+          .update(payload)
+          .eq('id', form.id)
+          .eq('store_id', form.storeId);
       }
-
-      // 2. UPDATE（id を保持したまま更新する）
-      const originalById = {};
-      RmdState.original.forEach(o => { originalById[o.id] = o; });
-
-      for (let i = 0; i < RmdState.rows.length; i++) {
-        const r = RmdState.rows[i];
-        if (!r.id) continue;
-        const o = originalById[r.id];
-        const changed = !o
-          || o.days_before !== r.days_before
-          || o.send_hour   !== r.send_hour
-          || o.send_minute !== r.send_minute
-          || o.target      !== r.target
-          || o.message_template !== r.message_template
-          || o.is_enabled  !== r.is_enabled
-          || o.sort_order  !== i;
-        if (!changed) continue;
-
-        const up = await db.from('reminder_schedules')
-          .update({
-            days_before     : r.days_before,
-            send_hour       : r.send_hour,
-            send_minute     : r.send_minute,
-            target          : r.target,
-            message_template: r.message_template,
-            is_enabled      : r.is_enabled,
-            sort_order      : i
-          })
-          .eq('id', r.id)
-          .eq('store_id', storeId);
-        if (up.error) {
-          // 2つの行の時刻を「入れ替える」編集は、UPDATEの途中で一瞬だけ
-          // unique(store_id, days_before, send_hour, send_minute) に当たる。
-          // DBの生メッセージ（duplicate key value violates…）は店長には読めないので、
-          // 何をすれば直るかだけを伝える。
-          if (up.error.code === '23505') {
-            throw new Error(
-              '同じ時刻どうしの入れ替えは、一度にまとめて保存できません。\n' +
-              'お手数ですが、1つずつ変更して保存してください。');
-          }
-          throw new Error('更新に失敗しました: ' + up.error.message);
-        }
-      }
-
-      // 3. INSERT
-      const newRows = RmdState.rows
-        .map((r, i) => ({ r: r, i: i }))
-        .filter(x => !x.r.id);
-      if (newRows.length) {
-        const ins = await db.from('reminder_schedules')
-          .insert(newRows.map(x => ({
-            store_id        : storeId,
-            days_before     : x.r.days_before,
-            send_hour       : x.r.send_hour,
-            send_minute     : x.r.send_minute,
-            target          : x.r.target,
-            message_template: x.r.message_template,
-            is_enabled      : x.r.is_enabled,
-            sort_order      : x.i
-          })));
-        if (ins.error) throw new Error('追加に失敗しました: ' + ins.error.message);
-      }
-
-      // 4. ON/OFF（行が無ければ作る。既定は false のまま＝勝手にONにしない）
-      const set = await db.from('reminder_settings')
-        .upsert({ store_id: storeId, is_enabled: RmdState.enabled }, { onConflict: 'store_id' });
-      if (set.error) throw new Error('ON/OFFの保存に失敗しました: ' + set.error.message);
+      if (res.error) throw res.error;
 
       showToast('保存しました');
-      await this.load();
+      await this.loadAll();
+      this.render();
+      showScreen('list');
 
     } catch (err) {
       console.error('[Reminder.save]', err);
-      this._actionMessage(err.message, true);
+      this._editMessage(this._saveErrorMessage(err), true);
     } finally {
       this._setBusy(false);
     }
   },
 
-  _labelOf(options, value) {
-    const hit = options.find(o => String(o.value) === String(value));
-    return hit ? hit.label : String(value);
+  /**
+   * DBのエラーを店長が読める文言にする。
+   * 生のメッセージ（duplicate key value violates…）は読めないので、
+   * 何をすれば直るかだけを伝える。
+   */
+  _saveErrorMessage(err) {
+    const code = err && err.code;
+    if (code === '23505') {
+      return '同じタイミングがすでにあります。日にちか時刻を変えてください。';
+    }
+    if (code === '23514') {
+      return '配信のしかたと配信日時の組み合わせが正しくありません。'
+        + '入力内容をご確認ください。';
+    }
+    return '保存に失敗しました: ' + ((err && err.message) || '');
+  },
+
+  /** @param {string} which 'save' | 'delete'。ラベルを変えるのは押した側だけ */
+  _setBusy(busy, which) {
+    RmdState.busy = busy;
+    const save = document.getElementById('rmd-save');
+    if (save) {
+      save.disabled    = busy;
+      save.textContent = (busy && which === 'save') ? '保存中…' : '保存';
+    }
+    const del = document.getElementById('rmd-delete');
+    if (del) del.disabled = busy;
+  },
+
+  _editMessage(message, isError) {
+    const box = document.getElementById('rmd-edit-msg');
+    if (!box) return;
+    if (!message) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="${isError ? 'error-banner' : 'warning-banner'}">`
+      + escapeHtml(message) + '</div>';
   },
 
   // --------------------------------------------------------
-  // 送信（Edge Function）
+  // 画面B: 削除
   // --------------------------------------------------------
 
   /**
-   * send-reminders を叩く。認可は Edge Function 側（is_manager_of）が判定する。
-   * アクセストークンは supabase-js が持っているセッションから取る＝
-   * 認証経路は SupaAPI と同じで、独自のトークン取得は一切しない。
+   * 削除の確認。confirm() は使わない。
+   * 何を消すのか（文面）と、消すと何が起きるのか（いつから届かなくなるか）を
+   * 見せてから決めてもらう。ボタンだけの確認では判断材料が無い。
    */
-  async _callFunction(payload) {
-    const { data: { session } } = await SupaAPI.db.auth.getSession();
-    if (!session) {
-      throw new Error('ログイン情報が切れています。画面を開き直してください。');
+  openDeleteModal() {
+    const form = RmdState.form;
+    if (!form || form.isNew || RmdState.busy) return;
+
+    const data = this._data(form.storeId);
+    const row  = data ? data.schedules.find(r => r.id === form.id) : null;
+
+    const excerpt = document.getElementById('rmd-del-excerpt');
+    if (excerpt) excerpt.textContent = String(form.message || '').trim();
+
+    // 「いつから届かなくなるか」＝この行の次の配信日時
+    const at = row ? this._sendAtOf(row, data.period) : null;
+    const effect = document.getElementById('rmd-del-effect');
+    if (effect) {
+      effect.textContent = at
+        ? '削除すると、' + formatShortSendAt(at) + ' 以降このメッセージは配信されなくなります'
+        : '削除すると、このメッセージは配信されなくなります';
     }
-    const res = await fetch(REMINDER_FN_URL, {
-      method : 'POST',
-      headers: {
-        'Content-Type' : 'application/json',
-        'Authorization': 'Bearer ' + session.access_token,
-        'apikey'       : CONFIG_V2.SUPABASE_ANON_KEY
-      },
-      body: JSON.stringify(payload)
-    });
-    let body;
-    try {
-      body = await res.json();
-    } catch (e) {
-      throw new Error('送信サーバーの応答を解析できませんでした (HTTP ' + res.status + ')');
-    }
-    if (!res.ok) {
-      throw new Error('送信に失敗しました (HTTP ' + res.status + '): '
-        + (body.message || body.error || JSON.stringify(body)));
-    }
-    return body;
+
+    document.getElementById('rmd-del-modal').classList.add('active');
   },
 
-  /** 送信系の共通の後始末（結果表示・履歴の読み直し） */
-  async _afterSend(result) {
-    const sent   = Number(result.sent) || 0;
-    const errors = Array.isArray(result.errors) ? result.errors : [];
-    if (errors.length) {
-      this._actionMessage(
-        sent + '件送信しました。' + errors.length + '件でエラーが出ています。\n'
-        + errors.map(e => typeof e === 'string' ? e : JSON.stringify(e)).join('\n'),
-        true);
-    } else {
-      showToast(sent + '件送信しました');
-      this._actionMessage('');
-    }
-    try {
-      RmdState.logs = await this._loadLogs(RmdState.storeId);
-      this._renderLogs();
-    } catch (e) {
-      console.warn('[Reminder._afterSend] 履歴の再取得に失敗:', e);
-    }
+  closeDeleteModal() {
+    document.getElementById('rmd-del-modal').classList.remove('active');
   },
 
-  /** 自分にテスト送信（宛先はログイン中の店長自身のみ。他人は選べない） */
-  async sendTest() {
+  async confirmDelete() {
     if (RmdState.busy) return;
-    if (!RmdState.period) {
-      this._actionMessage('受付中の提出期間がないため、いまは送信できません。', true);
-      return;
-    }
-    const store = this._selectedStore();
-    if (!store || !store.store_key) {
-      this._actionMessage('店舗情報を取得できませんでした。', true);
-      return;
-    }
-    if (!RmdState.memberId) {
-      this._actionMessage('ご自身のメンバー情報が見つかりませんでした。テスト送信はできません。', true);
-      return;
-    }
-    if (this._isDirty()) {
-      this._actionMessage('保存していない変更があります。先に［保存］してください。', true);
-      return;
-    }
-    if (!confirm('ご自身（' + (RmdState.displayName || 'ログイン中の方') + '）のLINEにテスト送信します。\nよろしいですか？')) return;
+    const form = RmdState.form;
+    if (!form || form.isNew) return;
 
-    this._setBusy(true, 'test');
-    this._actionMessage('');
+    this._setBusy(true, 'delete');
+    const okBtn = document.getElementById('rmd-del-ok');
+    if (okBtn) { okBtn.disabled = true; okBtn.textContent = '削除中…'; }
+
     try {
-      const result = await this._callFunction({
-        mode     : 'test',
-        store_key: store.store_key,
-        member_id: RmdState.memberId
-      });
-      await this._afterSend(result);
+      const res = await SupaAPI.db.from('reminder_schedules')
+        .delete()
+        .eq('id', form.id)
+        .eq('store_id', form.storeId);
+      if (res.error) throw res.error;
+
+      this.closeDeleteModal();
+      RmdState.form = null;
+      showToast('削除しました');
+      await this.loadAll();
+      this.render();
+      showScreen('list');
+
     } catch (err) {
-      console.error('[Reminder.sendTest]', err);
-      this._actionMessage(err.message, true);
+      console.error('[Reminder.confirmDelete]', err);
+      this.closeDeleteModal();
+      this._editMessage('削除に失敗しました: ' + ((err && err.message) || ''), true);
     } finally {
-      this._setBusy(false);
-    }
-  },
-
-  /** 今すぐ送る。タイミングが複数あるときは、どれを送るか選ばせてから確認する */
-  sendNow() {
-    if (RmdState.busy) return;
-    if (!RmdState.period) {
-      this._actionMessage('受付中の提出期間がないため、いまは送信できません。', true);
-      return;
-    }
-    if (this._isDirty()) {
-      this._actionMessage('保存していない変更があります。先に［保存］してください。', true);
-      return;
-    }
-    const candidates = RmdState.rows.filter(r => r.id && r.is_enabled);
-    if (!candidates.length) {
-      this._actionMessage('送信できるタイミングがありません。', true);
-      return;
-    }
-    if (candidates.length === 1) {
-      this._confirmAndSendNow(candidates[0]);
-      return;
-    }
-    this._openPickModal(candidates);
-  },
-
-  _openPickModal(candidates) {
-    const modal = document.getElementById('rmd-pick-modal');
-    const list  = document.getElementById('rmd-pick-list');
-    list.innerHTML = candidates.map((r, i) => {
-      const at  = RmdState.period
-        ? formatSendAt(calcSendAt(RmdState.period.deadline, r.days_before, r.send_hour, r.send_minute))
-        : this._labelOf(DAYS_BEFORE_OPTIONS, r.days_before) + ' ' + pad2(r.send_hour) + ':' + pad2(r.send_minute);
-      const who = this._labelOf(TARGET_OPTIONS, r.target);
-      return `<button type="button" class="btn-secondary btn-sm" data-pick="${i}">${escapeHtml(at)}（${escapeHtml(who)}）</button>`;
-    }).join('');
-    list.querySelectorAll('[data-pick]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._closePickModal();
-        this._confirmAndSendNow(candidates[Number(btn.dataset.pick)]);
-      });
-    });
-    modal.classList.add('active');
-  },
-
-  _closePickModal() {
-    document.getElementById('rmd-pick-modal').classList.remove('active');
-  },
-
-  /** 人数を明示した確認ダイアログを出してから送る */
-  async _confirmAndSendNow(row) {
-    const store = this._selectedStore();
-    if (!store || !store.store_key) {
-      this._actionMessage('店舗情報を取得できませんでした。', true);
-      return;
-    }
-    const pv    = RmdState.preview || {};
-    const count = row.target === 'all'
-      ? (Number(pv.target_all) || 0)
-      : (Number(pv.target_unsubmitted) || 0);
-    const who   = row.target === 'all' ? '' : '未提出の';
-
-    if (!confirm(
-      store.store_name + 'の' + who + count + '名にLINEを送信します。\n' +
-      'よろしいですか？'
-    )) return;
-
-    this._setBusy(true, 'now');
-    this._actionMessage('');
-    try {
-      const result = await this._callFunction({
-        mode       : 'now',
-        store_key  : store.store_key,
-        schedule_id: row.id
-      });
-      await this._afterSend(result);
-    } catch (err) {
-      console.error('[Reminder._confirmAndSendNow]', err);
-      this._actionMessage(err.message, true);
-    } finally {
+      if (okBtn) { okBtn.disabled = false; okBtn.textContent = '削除する'; }
       this._setBusy(false);
     }
   },
 
   // --------------------------------------------------------
-  // 画面の下ごしらえ
+  // 画面C: 配信済み
   // --------------------------------------------------------
 
-  _setBusy(busy, which) {
-    RmdState.busy = busy;
-    const labels = { save: '保存中…', test: '送信中…', now: '送信中…' };
-    const btns = {
-      save: document.getElementById('rmd-save'),
-      test: document.getElementById('rmd-test'),
-      now : document.getElementById('rmd-now')
-    };
-    Object.keys(btns).forEach(k => {
-      if (!btns[k]) return;
-      btns[k].disabled = busy;
-    });
-    if (busy && which && btns[which]) {
-      btns[which].dataset.label = btns[which].textContent;
-      btns[which].textContent   = labels[which];
-    } else if (!busy) {
-      Object.keys(btns).forEach(k => {
-        if (btns[k] && btns[k].dataset.label) {
-          btns[k].textContent = btns[k].dataset.label;
-          delete btns[k].dataset.label;
-        }
+  /**
+   * 配信済み画面へ。
+   * データは get_reminder_history に聞く。reminder_logs は直接SELECTしない
+   * （何を店長に見せてよいかの線引きは関数側に一本化されている）。
+   */
+  async openSent() {
+    const storeId = RmdState.storeId;
+    const store   = this._storeOf(storeId);
+
+    const sub = document.getElementById('rmd-sent-store');
+    if (sub) sub.textContent = store ? store.store_name : '';
+
+    const box = document.getElementById('rmd-sent-list');
+    if (box) box.innerHTML = '<p class="loading-text">読み込み中…</p>';
+    showScreen('sent');
+
+    try {
+      const res = await SupaAPI.db.rpc('get_reminder_history', {
+        p_store_id: storeId,
+        p_limit   : HISTORY_LIMIT
       });
-      // 一律にenabledへ戻さない。受付中の期間が無い店では
-      // 送信系は止めたままにする必要がある。
-      this._renderActions();
+      if (res.error) throw new Error(res.error.message);
+      // 表示中に店を切り替えられた場合は、古い結果を描かない
+      if (RmdState.storeId !== storeId) return;
+      this._renderHistory(Array.isArray(res.data) ? res.data : []);
+
+    } catch (err) {
+      console.error('[Reminder.openSent]', err);
+      if (box) {
+        box.innerHTML = `<div class="rmd-panel"><p class="error-text">`
+          + escapeHtml('配信の記録を取得できませんでした: ' + err.message)
+          + '</p></div>';
+      }
     }
   },
 
-  _actionMessage(message, isError) {
-    const box = document.getElementById('rmd-action-msg');
+  _renderHistory(rows) {
+    const box = document.getElementById('rmd-sent-list');
     if (!box) return;
-    if (!message) { box.innerHTML = ''; return; }
-    box.innerHTML = `<div class="${isError ? 'error-banner' : 'warning-banner'}" style="margin-top:12px">`
-      + escapeHtml(message) + '</div>';
+
+    if (!rows.length) {
+      box.innerHTML = '<div class="rmd-panel"><p class="info-text">まだ配信の記録はありません。</p></div>';
+      return;
+    }
+
+    box.innerHTML = rows.map(r => {
+      // 送り終わっていれば sent_at、まだなら created_at
+      const when = formatSendAt(jstPartsOf(r.sent_at || r.created_at));
+      const kind = HISTORY_KIND_LABELS[r.kind] || r.kind || '';
+      const to   = r.target === 'unsubmitted' ? '未提出の人だけ'
+                 : r.target === 'all'         ? '全員' : '';
+
+      return `
+        <div class="rmd-hist">
+          <p class="rmd-hist-msg">${escapeHtml(r.message_excerpt || '')}</p>
+          ${to ? `<p class="rmd-hist-meta">配信先: ${escapeHtml(to)}</p>` : ''}
+          <p class="rmd-hist-meta">配信日時: ${escapeHtml(when)}</p>
+          <div class="rmd-hist-foot">
+            ${this._historyBadge(r)}
+            ${kind ? `<span class="rmd-hist-kind">${escapeHtml(kind)}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  /**
+   * 配信結果のバッジ。
+   * failed の詳細（error本文）は出さない。生のエラー文は店長には読めないし、
+   * get_reminder_history もその列を返さない。
+   */
+  _historyBadge(row) {
+    const status = row.status;
+    if (status === 'sent') {
+      const n = row.recipient_count == null ? null : Number(row.recipient_count);
+      return '<span class="rmd-hist-badge sent">✓ '
+        + (n == null ? '配信しました' : n + '名に配信') + '</span>';
+    }
+    if (status === 'no_target') {
+      return '<span class="rmd-hist-badge no_target">全員提出済みのため配信なし</span>';
+    }
+    if (status === 'failed') {
+      return '<span class="rmd-hist-badge failed">配信できませんでした</span>';
+    }
+    if (status === 'sending') {
+      return '<span class="rmd-hist-badge sending">配信中</span>';
+    }
+    return `<span class="rmd-hist-badge sending">${escapeHtml(status || '')}</span>`;
+  },
+
+  // --------------------------------------------------------
+  // 画面遷移
+  // --------------------------------------------------------
+
+
+  backToList() {
+    RmdState.form = null;
+    showScreen('list');
+  },
+
+  backToManagerHome() {
+    location.href = MANAGER_HOME_URL;
   },
 
   /** ボタンのイベントを1度だけ結ぶ */
   bindEvents() {
-    document.getElementById('rmd-toggle').addEventListener('click', () => this.toggleEnabled());
-    document.getElementById('rmd-add').addEventListener('click', () => this.addRow());
+    // --- 画面A ---
+    document.getElementById('rmd-create').addEventListener('click', () => this.openEdit(null));
+    document.getElementById('rmd-sent').addEventListener('click', () => this.openSent());
+    document.getElementById('rmd-back').addEventListener('click', () => this.backToManagerHome());
+    document.getElementById('rmd-back-top').addEventListener('click', () => this.backToManagerHome());
+
+    // --- 画面B ---
+    document.querySelectorAll('#rmd-kind .rmd-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const form = RmdState.form;
+        if (!form || !form.isNew) return;      // 編集中は変更できない
+        if (form.scheduleType === btn.dataset.kind) return;
+        form.scheduleType = btn.dataset.kind;
+        this._renderEdit();
+      });
+    });
+
+    document.getElementById('rmd-days').addEventListener('change', (e) => {
+      RmdState.form.daysBefore = Number(e.target.value);
+      this._renderWhenBox();
+    });
+
+    ['rmd-hour', 'rmd-hour-once'].forEach(id => {
+      document.getElementById(id).addEventListener('change', (e) => {
+        RmdState.form.hour   = Number(e.target.value);
+        RmdState.form.minute = 0;   // 画面から選べるのは00分のみ
+        this._renderWhenFields();   // 片方を変えたらもう片方の表示も合わせる
+        this._renderWhenBox();
+      });
+    });
+
+    document.getElementById('rmd-date').addEventListener('change', (e) => {
+      RmdState.form.dateStr = e.target.value || '';
+      this._renderWhenBox();
+    });
+
+    document.getElementById('rmd-target').addEventListener('change', (e) => {
+      RmdState.form.target = e.target.value === 'unsubmitted' ? 'unsubmitted' : 'all';
+      this._renderTargetNote();
+    });
+
+    const msg = document.getElementById('rmd-msg');
+    msg.addEventListener('input', (e) => {
+      RmdState.form.message = e.target.value;
+      e.target.classList.remove('input-error');
+      this._renderPreview();
+    });
+
     document.getElementById('rmd-save').addEventListener('click', () => this.save());
-    document.getElementById('rmd-test').addEventListener('click', () => this.sendTest());
-    document.getElementById('rmd-now').addEventListener('click', () => this.sendNow());
-    document.getElementById('rmd-pick-cancel').addEventListener('click', () => this._closePickModal());
-    document.getElementById('rmd-pick-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'rmd-pick-modal') this._closePickModal();
+    document.getElementById('rmd-delete').addEventListener('click', () => this.openDeleteModal());
+    document.getElementById('rmd-edit-back').addEventListener('click', () => this.backToList());
+    document.getElementById('rmd-edit-back2').addEventListener('click', () => this.backToList());
+
+    // --- 削除の確認モーダル ---
+    document.getElementById('rmd-del-cancel').addEventListener('click', () => this.closeDeleteModal());
+    document.getElementById('rmd-del-ok').addEventListener('click', () => this.confirmDelete());
+    document.getElementById('rmd-del-modal').addEventListener('click', (e) => {
+      // 背景を触ったときだけ閉じる（ボックス内のタップで閉じない）
+      if (e.target.id === 'rmd-del-modal') this.closeDeleteModal();
     });
-    document.getElementById('rmd-back').addEventListener('click', () => {
-      if (this._isDirty() && !confirm('保存していない変更があります。破棄して戻りますか？')) return;
-      location.href = MANAGER_HOME_URL;
-    });
+
+    // --- 画面C ---
+    document.getElementById('rmd-sent-back').addEventListener('click', () => this.backToList());
+    document.getElementById('rmd-sent-back2').addEventListener('click', () => this.backToList());
   }
 };
 
@@ -1115,8 +1330,9 @@ async function initApp() {
     RmdState.storeId = RmdState.managed[0].store_id;
 
     Reminder.bindEvents();
-    showScreen('main');
-    await Reminder.load();
+    await Reminder.loadAll();
+    Reminder.render();
+    showScreen('list');
 
   } catch (err) {
     console.error('[initApp] 起動エラー:', err);
