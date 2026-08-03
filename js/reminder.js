@@ -30,7 +30,7 @@
  */
 
 // 店長トップへの戻り先。?v= は manager-home.html 側の現行値に合わせる。
-const MANAGER_HOME_URL = 'manager-home.html?v=20260731-v1-reminder';
+const MANAGER_HOME_URL = 'manager-home.html?v=20260804-v1-login-redirect';
 
 // LINE無料プランの月間上限200通に対する警告ライン
 const QUOTA_LIMIT = 200;
@@ -1298,7 +1298,7 @@ async function initApp() {
 
     // 2. 未ログインならリダイレクト（戻り後に再実行される）
     if (!liff.isLoggedIn()) {
-      liff.login();
+      liff.login({ redirectUri: location.href });
       return;
     }
 

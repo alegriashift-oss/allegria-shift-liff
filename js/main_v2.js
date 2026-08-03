@@ -449,7 +449,7 @@ async function initApp() {
 
     // 2. LINEにログインしていなければリダイレクト
     if (!liff.isLoggedIn()) {
-      liff.login();
+      liff.login({ redirectUri: location.href });
       return; // リダイレクト後に再実行されるのでここで終了
     }
 

@@ -374,7 +374,7 @@ const ManagerHome = {
    * ここ（manager-home）へ戻る。?v= はキャッシュバスター。
    */
   openMembers() {
-    location.href = 'admin-v2.html?v=20260726-v3-period-selector&from=manager';
+    location.href = 'admin-v2.html?v=20260804-v1-login-redirect&from=manager';
   },
 
   // --------------------------------------------------------
@@ -474,7 +474,7 @@ async function initApp() {
 
     // 2. 未ログインならリダイレクト（戻り後に再実行される）
     if (!liff.isLoggedIn()) {
-      liff.login();
+      liff.login({ redirectUri: location.href });
       return;
     }
 
