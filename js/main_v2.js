@@ -469,11 +469,17 @@ async function initApp() {
 
   } catch (err) {
     console.error('[initApp] 起動エラー:', err);
-    showError(
-      'アプリの起動に失敗しました。\n\n' +
-      err.message + '\n\n' +
-      'LINEアプリを再起動してお試しください。'
-    );
+    // 店舗まわりの確定エラー（err.userFacing）は再起動しても直らないので、
+    // 前置き・後置きを付けずメッセージだけを見せる。
+    if (err.userFacing) {
+      showError(err.message);
+    } else {
+      showError(
+        'アプリの起動に失敗しました。\n\n' +
+        err.message + '\n\n' +
+        'LINEアプリを再起動してお試しください。'
+      );
+    }
   }
 }
 

@@ -105,20 +105,75 @@ const SupaAPI = {
   },
 
   /**
+   * LIFF入口URLの ?store=<store_key> を返す。無ければ null。
+   * ★必ず liff.init() の完了後に呼ぶこと。
+   *   LIFF URLに付けた追加パラメータは、最初のリダイレクトでは
+   *   liff.state に包まれており、それを展開するのが liff.init() の仕事のため。
+   *
+   * ★sessionStorage には保存しない。保存すると、テスト店を開いた後に
+   *   アレグリアを開いたときに古いキーが残り、連携済みスタッフが
+   *   名前選択画面に飛ばされる事故になる。毎回URLから読み直す。
+   */
+  getStoreKey() {
+    const direct = new URLSearchParams(location.search).get('store');
+    if (direct) return direct;
+
+    // 保険: liff.state に包まれたままのケース
+    const state = new URLSearchParams(location.search).get('liff.state');
+    if (state) {
+      const q = state.indexOf('?');
+      if (q >= 0) {
+        const inner = new URLSearchParams(state.slice(q + 1)).get('store');
+        if (inner) return inner;
+      }
+    }
+    return null;
+  },
+
+  /**
    * ログイン。セッション確立まで終わると status:'ok' を返す。
    * 未連携のときは status:'need_registration' と candidates を返す。
+   *
+   * ?store= が付いているときは、既存セッションでも「その店に所属しているか」を
+   * 確かめる。所属していなければサインアウトして line-auth を通し直す＝
+   * 掛け持ちで2店目に追加された人が、その店の名前選択画面にたどり着ける。
    */
   async login() {
+    const storeKey = this.getStoreKey();
     const { data: { session } } = await this.db.auth.getSession();
+
     if (session) {
       this.user = session.user;
-      return { status: 'ok' };
+
+      if (!storeKey) {
+        return { status: 'ok' };          // 従来どおり（挙動不変）
+      }
+
+      // このセッションが store_key の店に所属しているか確認する
+      const { data: rows, error } = await this.db
+        .from('store_members')
+        .select('id, stores!inner(store_key)')
+        .eq('user_id', session.user.id)
+        .eq('status', 'active');
+
+      if (!error && Array.isArray(rows)) {
+        const belongs = rows.some(r => r.stores && r.stores.store_key === storeKey);
+        if (belongs) {
+          return { status: 'ok' };        // その店の人。従来どおり
+        }
+        await this.db.auth.signOut();     // 未所属 → line-auth を通す
+        this.user = null;
+      } else {
+        // ★判定不能なら従来どおり通す。ここで signOut すると、通信が不安定な
+        //   だけでスタッフがログアウトさせられ、提出できない事故になる。
+        return { status: 'ok' };
+      }
     }
 
-    const { http, body } = await this._callLineAuth({
-      action : 'login',
-      idToken: this._getIdTokenOrThrow()
-    });
+    // store_key が無いときはキー自体を送らない（未指定＝絞り込み無し＝現行挙動）
+    const payload = { action: 'login', idToken: this._getIdTokenOrThrow() };
+    if (storeKey) payload.store_key = storeKey;
+    const { http, body } = await this._callLineAuth(payload);
 
     if (body.status === 'ok') {
       await this._establishSession(body);
@@ -131,6 +186,7 @@ const SupaAPI = {
     if (this._isExpiredTokenResponse(http, body)) {
       this._forceRelogin();  // 必ず throw する
     }
+    this._throwIfStoreError(body);  // 店舗まわりの確定エラーなら throw する
     throw new Error('ログインに失敗しました (HTTP ' + http + '): ' + (body.message || body.code || ''));
   },
 
@@ -138,12 +194,15 @@ const SupaAPI = {
    * 初回登録。成功すると status:'ok'（セッション確立済み）。
    * 名前が取られていたときは status:'error', code:'name_already_taken' をそのまま返す。
    */
-  async register(profileId) {
-    const { http, body } = await this._callLineAuth({
-      action   : 'register',
-      idToken  : this._getIdTokenOrThrow(),
-      profileId: profileId
-    });
+  async register(memberId) {
+    const storeKey = this.getStoreKey();
+    const payload = {
+      action  : 'register',
+      idToken : this._getIdTokenOrThrow(),
+      memberId: memberId
+    };
+    if (storeKey) payload.store_key = storeKey;
+    const { http, body } = await this._callLineAuth(payload);
 
     if (body.status === 'ok') {
       await this._establishSession(body);
@@ -155,7 +214,26 @@ const SupaAPI = {
     if (this._isExpiredTokenResponse(http, body)) {
       this._forceRelogin();  // 必ず throw する
     }
+    this._throwIfStoreError(body);  // 店舗まわりの確定エラーなら throw する
     throw new Error('登録に失敗しました (HTTP ' + http + '): ' + (body.message || body.code || ''));
+  },
+
+  /**
+   * line-auth が返す店舗まわりの確定エラーを、そのまま画面に出せる日本語で投げる。
+   * 再試行しても直らない＝呼び出し側が「もう一度お試しください」を前置きしないよう
+   * err.userFacing を立てる。該当しなければ何もしない（通信断・期限切れ等は
+   * 再試行で直るので、既存の前置きが文言として正しい＝フラグを付けない）。
+   */
+  _throwIfStoreError(body) {
+    const MESSAGES = {
+      unknown_store : 'この店舗の設定が見つかりません。店長にご連絡ください。',
+      store_mismatch: '店舗が一致しません。LINEのメニューから開き直してください。'
+    };
+    const message = MESSAGES[body && body.code];
+    if (!message) return;
+    const err = new Error(message);
+    err.userFacing = true;
+    throw err;
   },
 
   /**

@@ -123,7 +123,10 @@ const NameSelector = {
       await this.refresh();
 
     } catch (err) {
-      alert('登録に失敗しました。もう一度お試しください。\n' + err.message);
+      // 店舗まわりの確定エラー（err.userFacing）は再試行しても直らないので、
+      // 「もう一度お試しください」を前置きせずメッセージだけを見せる。
+      alert(err.userFacing ? err.message
+                           : '登録に失敗しました。もう一度お試しください。\n' + err.message);
       console.error('[NameSelector] register:', err);
       yesBtn.disabled    = false;
       yesBtn.textContent = 'はい';
