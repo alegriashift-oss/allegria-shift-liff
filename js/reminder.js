@@ -30,7 +30,7 @@
  */
 
 // 店長トップへの戻り先。?v= は manager-home.html 側の現行値に合わせる。
-const MANAGER_HOME_URL = 'manager-home.html?v=20260804-v1-login-redirect';
+const MANAGER_HOME_URL = 'manager-home.html?v=20260804-v3-invite-newmember';
 
 // LINE無料プランの月間上限200通に対する警告ライン
 const QUOTA_LIMIT = 200;

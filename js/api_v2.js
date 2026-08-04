@@ -234,6 +234,26 @@ const SupaAPI = {
   },
 
   /**
+   * 店舗の公式アカウント友だち追加URL（stores.line_add_friend_url）を取得する。
+   * manager-home の「新メンバーに案内を送る」を押したときだけ引く。
+   * ※ getMe() の select には足さない: 列が解決できないと PostgREST は select 全体を
+   *   失敗させるため、submit-v2 を含む全ページのログインが道連れになる。
+   *   失敗をこの導線の中だけに閉じ込める。
+   * @param {string} storeId 表示中の店舗ID
+   * @returns {Promise<string|null>} 未登録・空文字なら null
+   */
+  async getStoreAddFriendUrl(storeId) {
+    const res = await this.db.from('stores')
+      .select('line_add_friend_url')
+      .eq('id', storeId)
+      .limit(1);
+    if (res.error) throw new Error('友だち追加URLの取得に失敗しました: ' + res.error.message);
+    const row = (res.data || [])[0];
+    const url = row ? String(row.line_add_friend_url || '').trim() : '';
+    return url !== '' ? url : null;
+  },
+
+  /**
    * GASに手動シート同期を依頼する（admin-v2 のメンバー管理FABから呼ぶ）。
    * 普段の10分同期と同じ runSupabaseSyncNow() をGAS側で1回走らせる。
    * Content-Type を付けない＝text/plain扱いでCORSプリフライトを回避し、

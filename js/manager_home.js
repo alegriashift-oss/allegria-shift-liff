@@ -11,6 +11,9 @@
  * 2026-07-26 期間セレクタ: 受付中(open)だけを見る作りをやめ、
  * 「受付中」＋「直近で締め切られた期間」の最大2件から選べるようにした。
  *
+ * 2026-08-04 新メンバー案内: liff.shareTargetPicker で「友だち追加リンク＋提出手順」を
+ * 店長の個人LINEから新人へ1通送る導線を追加（プレーンテキスト・送信履歴は残さない）。
+ *
  * ロード順: config_v2.js → api_v2.js → manager_home.js
  * calendar.js には依存しない。個別スタッフの明細は confirm-item 形式で自前描画する。
  */
@@ -26,7 +29,8 @@ const MgrState = {
   storeId    : null,  // 表示中の店舗
   periods    : [],    // 切替候補（表示順: 締切済み → 受付中）最大2件
   period     : null,  // 選択中の期間（periods の要素）または null
-  staff      : []     // 対象スタッフ [{id, name, sortOrder, submitted}]
+  staff      : [],    // 対象スタッフ [{id, name, sortOrder, submitted}]
+  inviteUrl  : null   // フォールバック表示中の友だち追加URL（コピー用）
 };
 
 // ============================================================
@@ -135,6 +139,26 @@ function shortStoreName(membership) {
   name = name.replace(/^アレグリア\s*/, '').replace(/【[^】]*】/g, '').trim();
   if (!name) name = String(membership.store_name || '');
   return name.length > 6 ? name.slice(0, 6) + '…' : name;
+}
+
+/**
+ * 新メンバー案内メッセージに出す公式アカウント名。
+ * 店ごとに変わるものではないので、いまはコード内定数で持つ
+ * （多店舗で名前が分かれたら stores 側に列を足して差し替える）。
+ */
+const OFFICIAL_ACCOUNT_NAME = 'アレグリア　シフト提出';
+
+/** 新メンバーへLINEで送る案内メッセージ本文（プレーンテキスト1通） */
+function buildInviteMessage(addFriendUrl) {
+  return [
+    'シフト提出の準備をお願いします！',
+    '',
+    '① 下のリンクから「' + OFFICIAL_ACCOUNT_NAME + '」を友だち追加',
+    '② 画面下のメニューから「シフトを提出する」を押す',
+    '③ 名前の一覧から自分の名前を選ぶ',
+    '',
+    addFriendUrl
+  ].join('\n');
 }
 
 // ============================================================
@@ -334,6 +358,8 @@ const ManagerHome = {
     this._renderHeader();
     this._renderStoreSwitch();
     this._renderSheetButton();
+    // 店舗を切り替えたら、前の店のURLを出したままにしない
+    this._hideInviteFallback();
 
     // 店舗切替のたびに前の店の期間が残らないよう、先に空にしてから読み直す
     MgrState.periods = [];
@@ -374,7 +400,121 @@ const ManagerHome = {
    * ここ（manager-home）へ戻る。?v= はキャッシュバスター。
    */
   openMembers() {
-    location.href = 'admin-v2.html?v=20260804-v2-instant-sheet-sync&from=manager';
+    location.href = 'admin-v2.html?v=20260804-v3-invite-newmember&from=manager';
+  },
+
+  // --------------------------------------------------------
+  // 新メンバーへの案内送信（liff.shareTargetPicker）
+  //   店長 → 新人の個人トークへ「友だち追加リンク＋提出手順」を1通送る。
+  //   新人は採用時点で店長の友だちになっている前提（店の公式アカウントは未追加）。
+  // --------------------------------------------------------
+
+  /**
+   * 「✉️ 新メンバーに案内を送る」。
+   * URLは押した瞬間に、いま選ばれている店舗のものを引く（掛け持ち店長の取り違え防止）。
+   */
+  async inviteNewMember() {
+    const store = this._selectedStore();
+    if (!store) {
+      showToast('店舗が選択されていません');
+      return;
+    }
+    this._hideInviteFallback();
+
+    let url;
+    try {
+      url = await SupaAPI.getStoreAddFriendUrl(store.store_id);
+    } catch (err) {
+      console.error('[ManagerHome.inviteNewMember] URL取得', err);
+      showToast('友だち追加URLを取得できませんでした。時間をおいてお試しください', 5000);
+      return;
+    }
+    if (!url) {
+      showToast('この店の友だち追加URLが未登録です。運営者にご連絡ください', 5000);
+      return;
+    }
+
+    // PCブラウザなど、共有APIが使えない環境ではコピー導線に落とす
+    const canShare = typeof liff !== 'undefined'
+      && typeof liff.isApiAvailable === 'function'
+      && liff.isApiAvailable('shareTargetPicker');
+    if (!canShare) {
+      this._showInviteFallback(url);
+      return;
+    }
+
+    try {
+      const result = await liff.shareTargetPicker([
+        { type: 'text', text: buildInviteMessage(url) }
+      ]);
+      // 送信時は {status:'success'}、キャンセル時は null。
+      // 環境によっては送信しても null が返るため、success 以外は無言で戻す
+      // （キャンセルをエラー扱いにしない）。
+      if (result && result.status === 'success') showToast('案内を送信しました');
+    } catch (err) {
+      console.error('[ManagerHome.inviteNewMember] shareTargetPicker', err);
+      showToast('LINEの共有画面を開けませんでした', 5000);
+      this._showInviteFallback(url);
+    }
+  },
+
+  /** 共有できないときの案内＋コピー導線を、ボタンの直下に開く */
+  _showInviteFallback(url) {
+    const el = document.getElementById('mgr-invite-fallback');
+    if (!el) return;
+    MgrState.inviteUrl = url;
+    el.style.display = '';
+    el.innerHTML = `
+      <p>この画面からは送信できません。LINEアプリから開いてください。<br>
+      すぐ送りたいときは、下のリンクをコピーしてLINEに貼り付けてください。</p>
+      <button class="mgr-invite-copy" onclick="ManagerHome.copyInviteUrl()">🔗 リンクをコピー</button>
+      <span class="mgr-invite-url">${escapeHtml(url)}</span>`;
+  },
+
+  _hideInviteFallback() {
+    const el = document.getElementById('mgr-invite-fallback');
+    if (!el) return;
+    el.style.display = 'none';
+    el.innerHTML = '';
+    MgrState.inviteUrl = null;
+  },
+
+  /**
+   * 友だち追加URLをクリップボードへ。
+   * Clipboard APIが使えない内蔵ブラウザ向けに execCommand へ、
+   * それも駄目なら「長押しで選択」の案内へ、と段階的に落とす。
+   */
+  async copyInviteUrl() {
+    const url = MgrState.inviteUrl;
+    if (!url) return;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+        showToast('リンクをコピーしました');
+        return;
+      }
+    } catch (err) {
+      console.warn('[ManagerHome.copyInviteUrl] clipboard API失敗', err);
+    }
+
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity  = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, url.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(ok ? 'リンクをコピーしました'
+                   : '下のリンクを長押しして選択・コピーしてください', 5000);
+    } catch (err) {
+      console.warn('[ManagerHome.copyInviteUrl] execCommand失敗', err);
+      showToast('下のリンクを長押しして選択・コピーしてください', 5000);
+    }
   },
 
   // --------------------------------------------------------
