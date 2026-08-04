@@ -374,7 +374,7 @@ const ManagerHome = {
    * ここ（manager-home）へ戻る。?v= はキャッシュバスター。
    */
   openMembers() {
-    location.href = 'admin-v2.html?v=20260804-v1-login-redirect&from=manager';
+    location.href = 'admin-v2.html?v=20260804-v2-instant-sheet-sync&from=manager';
   },
 
   // --------------------------------------------------------

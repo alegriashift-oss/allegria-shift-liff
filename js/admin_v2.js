@@ -230,6 +230,85 @@ const MemberManager = {
     return (store && store.store_key) || null;
   },
 
+  // --------------------------------------------------------
+  // 名簿変更の即時反映（緑FABと同じ処理を、変更直後に裏で1回呼ぶ）
+  // --------------------------------------------------------
+  //
+  // 【設計】即時反映は「速さ」の担当であって、正しさの保証ではない。
+  // GAS側の10分ごとの自動同期はそのまま残してあり、ここが失敗しても
+  // 最大10分で必ず追いつく二段構え。だから:
+  //   ・呼び出しは await しない（追加や退職の操作自体を待たせない。
+  //     runSupabaseSyncNow はシフト表全体を書き替えるので10〜20秒かかる）
+  //   ・失敗しても操作は成功しているので、エラー扱いにも失敗表示にもしない
+  //   ・逆に、実際に書けていないのに「反映しました」と出さない（嘘をつかない）
+
+  /** FABの下の小さなテキストにステータスを出す。tone='warn' で色を変える。 */
+  _setSyncStatus(text, tone) {
+    const meta = document.getElementById('sheet-sync-meta');
+    if (!meta) return;
+    meta.textContent = text;
+    meta.style.color = (tone === 'warn') ? '#b26a00' : '#888';
+    meta.style.display = 'block';
+  },
+
+  /**
+   * 名簿を変更した直後に呼ぶ。裏でシート同期を1回走らせ、結果に応じて
+   * 事実だけを表示する。例外は投げない（呼び出し元は結果を待たない）。
+   */
+  _autoSyncSheet() {
+    // GASは store_key で店を突合する。FABと同じ取得方法。
+    const storeKey = this._currentStoreKey();
+    if (!storeKey) return;   // 店が特定できなければ何もしない（10分同期が拾う）
+
+    this._setSyncStatus('シートに反映中…');
+
+    SupaAPI.manualSheetSync(storeKey).then(r => {
+      // GAS自体がエラーを返した（secret不一致など）
+      if (!r || r.status !== 'ok') {
+        console.warn('[MemberManager._autoSyncSheet] GAS応答:', r);
+        this._setSyncStatus('シートへの反映は10分以内に自動で行われます');
+        return;
+      }
+
+      // 20秒クールダウン。連続で複数人いじったときの正常な挙動なのでエラーにしない。
+      if (r.skipped) {
+        this._setSyncStatus('10分以内に自動反映されます');
+        return;
+      }
+
+      const roster = r.roster || {};
+      const status = String(roster.status || '');
+
+      // ブレーカー作動。書けていないので成功と言ってはいけない。
+      if (status.indexOf('blocked_') === 0) {
+        this._setSyncStatus('確認が必要です', 'warn');
+        showToast('確認が必要です。スプレッドシートのメニューから'
+          + '「名簿をDBから反映（確認のみ）」を実行してください', 8000);
+        return;
+      }
+
+      // 実際に書いた／名簿差分は無かった（どちらもシフト表同期は走っている）
+      if (roster.wrote === true || status === 'nochange') {
+        this._setSyncStatus('シートに反映しました');
+        return;
+      }
+
+      // キルスイッチで名簿反映を止めている状態。10分後も反映されないので
+      // 「10分以内に自動反映」とは言えない。事実だけ出す。
+      if (status === 'disabled') {
+        this._setSyncStatus('シフト表のみ更新（名簿反映は停止中）', 'warn');
+        return;
+      }
+
+      // status:'error' や想定外の値。操作自体は成功しているので失敗表示にはしない。
+      this._setSyncStatus('シートへの反映は10分以内に自動で行われます');
+    }).catch(err => {
+      // 通信断・タイムアウトなど。操作は成功しているので誤解させない。
+      console.warn('[MemberManager._autoSyncSheet]', err);
+      this._setSyncStatus('シートへの反映は10分以内に自動で行われます');
+    });
+  },
+
   /** FABの表示可否を判定して反映する。店長/管理者のときだけ出す。 */
   _updateSyncFabVisibility() {
     const fab  = document.getElementById('sheet-sync-fab');
@@ -422,6 +501,7 @@ const MemberManager = {
       await SupaAPI.addStoreMember(this._storeId, name, this._addEmp, maxOrder + 1);
       this.hideAddForm();
       showToast(name + ' さんを追加しました（LINE未連携）');
+      this._autoSyncSheet();   // 裏でシートへ即時反映（待たない）
       await this.load();
     } catch (err) {
       showToast(err.message);
@@ -524,6 +604,8 @@ const MemberManager = {
       if (empChanged)  await SupaAPI.setStoreMemberEmploymentType(id, this._editEmp);
       this.closeEditMember();
       showToast('変更を保存しました');
+      // 役割変更は名簿シートへの追記対象（role='staff'のみ）に影響しうるので同期する
+      if (roleChanged || empChanged) this._autoSyncSheet();
       await this.load();
     } catch (err) {
       // DBガードに弾かれたとき等。日本語のexceptionメッセージをそのまま見せる（C）
@@ -546,6 +628,7 @@ const MemberManager = {
     try {
       await SupaAPI.retireStoreMember(memberId);
       showToast(m.resolved_name + ' さんを退職にしました');
+      this._autoSyncSheet();   // 裏でシートへ即時反映（待たない）
       await this.load();
     } catch (err) {
       showToast(err.message);
@@ -561,6 +644,7 @@ const MemberManager = {
         .reduce((mx, x) => Math.max(mx, x.sort_order || 0), -1);
       await SupaAPI.reactivateStoreMember(memberId, maxOrder + 1);
       showToast(m.resolved_name + ' さんを再雇用にしました');
+      this._autoSyncSheet();   // 裏でシートへ即時反映（待たない）
       await this.load();
     } catch (err) {
       showToast(err.message);
