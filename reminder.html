@@ -40,7 +40,19 @@
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
     .rmd-panel-note { font-size: 0.78rem; color: var(--color-text-sub); margin-top: 8px; line-height: 1.6; }
-    .rmd-field-label { font-size: 0.85rem; font-weight: 700; margin-bottom: 10px; }
+
+    /* セクション見出し。
+       同じ色・同じ太さで並ぶとセクションの切れ目が読み取れないため、
+       文字を緑にし、左に細い縦線を添えて区切りを立てる。
+       背景色は付けない（カードが増えるほど画面が騒がしくなるため）。
+       太さ・サイズは変えない。目印を足すだけで、強調の順位は動かさない。
+       この扱いは画面A/B/C 共通（クラス側に持たせ、画面ごとに分けない）。 */
+    .rmd-field-label {
+      font-size: 0.85rem; font-weight: 700; margin-bottom: 10px;
+      color: #0F6E56;
+      border-left: 3px solid #5DCAA5;
+      padding-left: 8px;
+    }
 
     /* --- 店舗切替タブ（掛け持ち店長のみ） --- */
     .rmd-switch-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
@@ -369,7 +381,7 @@
         <textarea id="rmd-msg" class="rmd-textarea" rows="8" maxlength="500"
           placeholder="スタッフに送る文面を入力してください"></textarea>
         <p class="rmd-panel-note">
-          {名前} {期間} {締切} {URL} が使えます（配信時に自動で置き換わります）
+          {URL} と書くと、提出画面のリンクに置き換わります
         </p>
       </div>
 
@@ -482,7 +494,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260805-v1-storekey"></script>
-  <script src="js/reminder.js?v=20260805-v1-storekey"></script>
+  <script src="js/reminder.js?v=20260805-v2-headings"></script>
 
 </body>
 </html>

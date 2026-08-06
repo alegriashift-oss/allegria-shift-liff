@@ -75,11 +75,15 @@ const HISTORY_KIND_LABELS = {
   test     : 'テスト'
 };
 
-// 新規作成時の既定文面
+// 新規作成時の既定文面。
+// 差し込みタグは {URL} だけ。配信のたびに中身が変わるタグ（宛名・期間・締切）は
+// 廃止した。固定文なら、万一まちがった相手に届いても害がない。
+// {URL} は常に同じ値で、タップで提出画面が開く＝この機能の核なので残す。
 const DEFAULT_TEMPLATE =
-  '{名前}さん\n' +
-  '{期間}のシフト希望の提出期限は {締切} です。\n' +
-  'まだの方はこちらからお願いします。\n' +
+  '⚠️本日提出締め切り⚠️\n' +
+  '遅れないようにシフト提出お願いします🍖\n' +
+  '\n' +
+  '▼提出はこちら\n' +
   '{URL}';
 
 // ============================================================
@@ -88,7 +92,6 @@ const DEFAULT_TEMPLATE =
 
 const RmdState = {
   userId     : null,
-  displayName: null,
   managed    : [],    // 店長権限(admin/manager)を持つ所属
   storeId    : null,  // 表示中の店舗
   byStore    : {},    // storeId -> { isEnabled, schedules, period, preview, store, settings }
@@ -268,14 +271,6 @@ function formatSendAtWithDow(s) {
   return s.y + '/' + pad2(s.m) + '/' + pad2(s.d)
     + '(' + WEEKDAYS[jstWeekday(s)] + ') '
     + pad2(s.hour) + ':' + pad2(s.minute);
-}
-
-/** timestamptz → "8月10日(月) 23:59"（プレビューの {締切} 用） */
-function formatDeadlineJa(ts) {
-  const p = jstPartsOf(ts);
-  if (!p) return String(ts || '');
-  return p.m + '月' + p.d + '日(' + WEEKDAYS[jstWeekday(p)] + ') '
-    + pad2(p.hour) + ':' + pad2(p.minute);
 }
 
 /** 並べ替え用のキー。求まらないものは末尾に送る。 */
@@ -858,26 +853,24 @@ const Reminder = {
   },
 
   /**
-   * プレビュー。タグを実際の値に差し替えて、届く姿をそのまま見せる。
-   * 差し替えられない値（期間が無い・リンク未設定）はタグのまま残し、
-   * 何が足りないかを下に注記する。勝手に埋めると嘘になる。
+   * プレビュー。届く姿をそのまま見せる。
+   * 差し替えるのは {URL} だけ（宛名・期間・締切のタグは廃止した）。
+   * リンクが未設定のときは {URL} をタグのまま残し、その旨を下に注記する。
+   * 勝手に埋めると嘘になる。
+   *
+   * 廃止済みのタグ（{名前} など）を含む古い文面を読み込んだ場合は、
+   * タグのまま表示する。エラーにはしない。
    */
   _renderPreview() {
     const box  = document.getElementById('rmd-preview');
     const note = document.getElementById('rmd-preview-note');
     if (!box) return;
 
-    const form   = RmdState.form;
-    const data   = this._data(form.storeId);
-    const period = data ? data.period : null;
-    const url    = data && data.store ? data.store.liff_submit_url : null;
+    const form = RmdState.form;
+    const data = this._data(form.storeId);
+    const url  = data && data.store ? data.store.liff_submit_url : null;
 
     let text = String(form.message || '');
-    text = text.split('{名前}').join(RmdState.displayName || 'お名前');
-    if (period) {
-      text = text.split('{期間}').join(period.title || '');
-      text = text.split('{締切}').join(formatDeadlineJa(period.deadline));
-    }
     if (url) text = text.split('{URL}').join(url);
 
     let html = escapeHtml(text);
@@ -888,12 +881,13 @@ const Reminder = {
     }
     box.innerHTML = html || '<span style="color:#9ca3af">（メッセージが空です）</span>';
 
+    // 差し替えが要るのは {URL} だけになったので、注記もリンク未設定のときだけ。
+    // 受付中の期間が無くてもプレビューは完全に成立する。
     if (note) {
-      const reasons = [];
-      if (!url)    reasons.push('提出画面のリンクが未設定です。{URL} はこのまま送られます。');
-      if (!period) reasons.push('受付中の提出期間がないため、{期間} と {締切} は差し替えできません。');
-      note.style.display = reasons.length ? '' : 'none';
-      note.textContent   = reasons.join(' ');
+      note.style.display = url ? 'none' : '';
+      note.textContent   = url
+        ? ''
+        : '提出画面のリンクが未設定です。{URL} はこのまま送られます。';
     }
   },
 
@@ -1313,9 +1307,8 @@ async function initApp() {
 
     // 4. 自分の所属を読み込んで role で分岐
     const me = await SupaAPI.getMe();
-    RmdState.userId      = me.profile.id;
-    RmdState.displayName = me.profile.display_name;
-    RmdState.managed     = me.memberships.filter(
+    RmdState.userId  = me.profile.id;
+    RmdState.managed = me.memberships.filter(
       m => m.role === 'admin' || m.role === 'manager');
 
     if (!me.memberships.length) {
