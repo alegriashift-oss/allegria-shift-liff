@@ -112,6 +112,12 @@
       -webkit-tap-highlight-color: transparent;
     }
     .mgr-sheet-open:active { background: #f0fdf4; }
+    /* <a> から <button> に変えたぶんの差だけ打ち消す（見た目は据え置き）。
+       ボタンは背景・フォント・行間をページから継承しないため。 */
+    button.mgr-sheet-open {
+      appearance: none; -webkit-appearance: none; background: transparent;
+      font-family: inherit; line-height: inherit; cursor: pointer;
+    }
 
     /* --- その他の操作（リスト型） --- */
     .mgr-ops-heading { font-size: 0.85rem; font-weight: 700; color: var(--color-text-sub); margin: 20px 4px 8px; }
@@ -350,7 +356,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config_v2.js?v=20260613-v5"></script>
   <script src="js/api_v2.js?v=20260805-v1-storekey"></script>
-  <script src="js/manager_home.js?v=20260810-v1-sheetlink"></script>
+  <script src="js/manager_home.js?v=20260811-v1-syncopen"></script>
 
 </body>
 </html>
