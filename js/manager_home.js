@@ -168,9 +168,10 @@ function buildInviteMessage(addFriendUrl) {
 const ManagerHome = {
 
   // --- シート同期（「シフト表を開く」を押す前に1回走らせる） ---
-  // 押した時点から数えて最大この秒数だけ待つ。runSupabaseSyncNow はシフト表全体を
-  // 書き替えるので10〜20秒かかる実績がある。
-  _SHEET_SYNC_TIMEOUT_MS: 25000,
+  // 同期の完了を待つ上限。超えたら待たずに開く。スプレッドシートは開いている
+  // 最中の書き込みもその場で反映されるため、待ちきる必要はない。
+  // 先読みが効いていれば通常は0秒で開く。
+  _SHEET_SYNC_TIMEOUT_MS: 6000,
   _syncStarted: false,   // 先読みを始めたか（ページ読み込みにつき1回だけ true になる）
   _syncPromise: null,    // 進行中／完了済みの同期。{ok:boolean} に解決し、reject しない
 
@@ -315,14 +316,23 @@ const ManagerHome = {
     if (this._syncPromise) {
       const r = await Promise.race([this._syncPromise, deadline]);
       if (r.ok) return;                                   // 先読みが成功していた
-      if (r.timedOut) { console.warn('[sheet-sync] タイムアウト'); return; }
+      if (r.timedOut) { this._logSyncTimeout(); return; }
     }
 
     // 先読みが無い（store_keyが取れなかった等）／失敗していた → もう一度だけ。
     if (!storeKey) return;
     this._syncPromise = this._runSheetSync(storeKey);
     const retry = await Promise.race([this._syncPromise, deadline]);
-    if (retry.timedOut) console.warn('[sheet-sync] タイムアウト');
+    if (retry.timedOut) this._logSyncTimeout();
+  },
+
+  /**
+   * 上限まで待って先に開いたことをログに残す（画面には出さない）。
+   * 同期自体は裏で走り続け、開いたシートにあとから反映される。
+   */
+  _logSyncTimeout() {
+    console.log('[sheet-sync] timeout '
+      + (this._SHEET_SYNC_TIMEOUT_MS / 1000).toFixed(1) + 's 到達のため先に開きます');
   },
 
   /**
