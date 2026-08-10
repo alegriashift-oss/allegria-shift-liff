@@ -167,13 +167,11 @@ function buildInviteMessage(addFriendUrl) {
 
 const ManagerHome = {
 
-  // --- シート同期（「シフト表を開く」を押す前に1回走らせる） ---
-  // 同期の完了を待つ上限。超えたら待たずに開く。スプレッドシートは開いている
-  // 最中の書き込みもその場で反映されるため、待ちきる必要はない。
-  // 先読みが効いていれば通常は0秒で開く。
-  _SHEET_SYNC_TIMEOUT_MS: 6000,
+  // --- シート同期（裏で走らせるだけ。シートを開くのを待たせない） ---
+  // スプレッドシートは開いている最中の書き込みもその場で反映されるため、
+  // 同期の完了を待つ必要がない。押したら即座に開き、反映は表示中に届く。
   _syncStarted: false,   // 先読みを始めたか（ページ読み込みにつき1回だけ true になる）
-  _syncPromise: null,    // 進行中／完了済みの同期。{ok:boolean} に解決し、reject しない
+  _syncState  : 'idle',  // 'idle'（未実行）/ 'running' / 'ok' / 'failed'
 
   _selectedStore() {
     return MgrState.managed.find(m => m.store_id === MgrState.storeId) || null;
@@ -219,8 +217,8 @@ const ManagerHome = {
    * 欠ける店ではDOMごと出さない（disabledにはしない）。
    * showHome() から毎回呼ぶので、店舗切替でリンク先も更新される。
    *
-   * リンク(<a href>)ではなくボタンにしてあるのは、開く前にシート同期を待つため。
-   * URLはクリック時（同期の完了後）に組み立てる。
+   * リンク(<a href>)ではなくボタンにしてあるのは、開くのと同時に裏で
+   * シート同期を起こすため。URLはクリック時に組み立てる。
    */
   _renderSheetButton() {
     const holder = document.getElementById('mgr-sheet-card');
@@ -259,7 +257,6 @@ const ManagerHome = {
    * シフト表のURL。キャッシュされた同じページが再表示されるのを防ぐため、
    * 毎回変わる値(ts)を付ける。Google側は未知のクエリパラメータを無視するため副作用は無い。
    * 注意: フラグメント(#gid=)より前に置くこと。後ろに置くと効かない。
-   * 開く直前に呼ぶので、tsは同期が終わったあとの時刻になる。
    */
   _sheetUrl(sid, gid) {
     return 'https://docs.google.com/spreadsheets/d/'
@@ -268,29 +265,30 @@ const ManagerHome = {
   },
 
   /**
-   * シート同期を1回走らせる。**例外を投げず** {ok:boolean} に畳む。
+   * シート同期を1回走らせる。**投げっぱなし**（呼び出し元は結果を待たない）。
+   * 例外は握りつぶし、進行状況は _syncState にだけ残す。
    * 所要時間は将来の軽量化の判断材料になるので console に出す（画面には出さない）。
    */
   _runSheetSync(storeKey) {
     const t0 = Date.now();
     const elapsed = () => ((Date.now() - t0) / 1000).toFixed(1) + 's';
-    return SupaAPI.manualSheetSync(storeKey).then(r => {
+    this._syncState = 'running';
+    SupaAPI.manualSheetSync(storeKey).then(r => {
       // GAS側に20秒クールダウンがあり、直前に同期済みなら skipped:true が返る。
       // その場合シートは既に新しいので、成功と同じ扱いでよい。
       const ok = !!r && r.status === 'ok';
+      this._syncState = ok ? 'ok' : 'failed';
       console.log('[sheet-sync] ' + elapsed()
         + (r && r.skipped ? '（クールダウン中のためGAS側でスキップ）' : '')
         + (ok ? '' : ' 想定外の応答: ' + JSON.stringify(r)));
-      return { ok: ok };
     }).catch(err => {
+      this._syncState = 'failed';
       console.warn('[sheet-sync] ' + elapsed() + ' 失敗:', err);
-      return { ok: false };
     });
   },
 
   /**
-   * 先読み同期。初回表示が終わった時点で1回だけ裏で始める（await しない）。
-   * ボタンを押す頃には終わっていることが多く、そのぶん待ち時間が消える。
+   * 先読み同期。初回表示が終わった時点で1回だけ裏で始める。
    * 店舗切替では呼ばない＝発火はページ読み込みにつき1回だけ。
    */
   _prefetchSheetSync() {
@@ -299,68 +297,34 @@ const ManagerHome = {
     const storeKey = store ? store.store_key : null;
     if (!storeKey) return;   // 店が特定できなければ何もしない（10分同期が拾う）
     this._syncStarted = true;
-    this._syncPromise = this._runSheetSync(storeKey);
+    this._runSheetSync(storeKey);
   },
 
   /**
-   * ボタンを押したときに同期の完了を待つ。**例外は投げない。**
-   * 待つのはクリック時点から通算で最大 _SHEET_SYNC_TIMEOUT_MS。
-   * 先読みが成功していれば待ち時間ゼロ、失敗していたらもう一度だけ試す。
+   * 押したときの保険。先読みが動いていない／失敗していたときだけ、
+   * 裏で1回起こす。走行中・成功済みなら何もしない（無駄打ちを避ける）。
    */
-  async _awaitSheetSync(storeKey) {
-    // 25秒のデッドラインを1つだけ作って使い回す。先読み待ち→リトライで
-    // 25秒ずつ二重に待たされるのを防ぐ。
-    const deadline = new Promise(resolve => setTimeout(
-      () => resolve({ ok: false, timedOut: true }), this._SHEET_SYNC_TIMEOUT_MS));
-
-    if (this._syncPromise) {
-      const r = await Promise.race([this._syncPromise, deadline]);
-      if (r.ok) return;                                   // 先読みが成功していた
-      if (r.timedOut) { this._logSyncTimeout(); return; }
-    }
-
-    // 先読みが無い（store_keyが取れなかった等）／失敗していた → もう一度だけ。
-    if (!storeKey) return;
-    this._syncPromise = this._runSheetSync(storeKey);
-    const retry = await Promise.race([this._syncPromise, deadline]);
-    if (retry.timedOut) this._logSyncTimeout();
+  _kickSheetSyncIfNeeded() {
+    if (this._syncState === 'running' || this._syncState === 'ok') return;
+    const store    = this._selectedStore();
+    const storeKey = store ? store.store_key : null;
+    if (!storeKey) return;   // 店が特定できなければ何もしない（10分同期が拾う）
+    this._runSheetSync(storeKey);
   },
 
   /**
-   * 上限まで待って先に開いたことをログに残す（画面には出さない）。
-   * 同期自体は裏で走り続け、開いたシートにあとから反映される。
+   * 「開く ↗」を押したとき。**同期を待たずに即座に開く。**
+   * スプレッドシートは開いている最中の書き込みもその場で反映されるので、
+   * 同期の完了を待つ意味がない。同期が失敗しても開く動作には影響しない。
    */
-  _logSyncTimeout() {
-    console.log('[sheet-sync] timeout '
-      + (this._SHEET_SYNC_TIMEOUT_MS / 1000).toFixed(1) + 's 到達のため先に開きます');
-  },
-
-  /**
-   * 「開く ↗」を押したとき。同期を待ってからシートを開く。
-   * **同期の成否にかかわらず必ず開く**（失敗で開けなくなるのは改悪。
-   * 10分ごとの自動同期が必ず追いつくので、黙って開いても嘘にはならない）。
-   */
-  async openSheet() {
+  openSheet() {
     const store = this._selectedStore();
     if (!store) return;
-    // 押した時点の店で開く。待っている間に店を切り替えられても取り違えない。
-    const sid = store.spreadsheet_id;
-    const gid = store.sheet_gid;
 
-    // 待つ間だけ文言を変える。増やす表示はこれだけ（トーストも最終更新表示も出さない）。
-    const btn = document.getElementById('mgr-sheet-open-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '更新中…'; }
+    this._kickSheetSyncIfNeeded();   // 裏で走らせるだけ。結果は見ない
 
     try {
-      await this._awaitSheetSync(store.store_key || null);
-    } catch (err) {
-      // _awaitSheetSync は投げない設計だが、万一でも「開く」を止めない
-      console.warn('[sheet-sync] 予期しない例外:', err);
-    }
-
-    try {
-      // await のあとなので window.open / a.click() はブロックされる。liff.openWindow を使う。
-      const url = this._sheetUrl(sid, gid);
+      const url = this._sheetUrl(store.spreadsheet_id, store.sheet_gid);
       if (typeof liff !== 'undefined' && liff && typeof liff.openWindow === 'function') {
         liff.openWindow({ url: url, external: true });
       } else {
@@ -369,9 +333,6 @@ const ManagerHome = {
     } catch (err) {
       console.warn('[sheet-sync] シフト表を開けませんでした:', err);
     }
-
-    // 店舗を切り替えられていた場合ここは捨てられたノードなので、実害なく空振りする。
-    if (btn) { btn.disabled = false; btn.textContent = '開く ↗'; }
   },
 
   /**
