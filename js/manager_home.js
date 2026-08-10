@@ -227,8 +227,12 @@ const ManagerHome = {
       return;
     }
 
+    // キャッシュされた同じページが再表示されるのを防ぐため、毎回変わる値を付ける。
+    // Google側は未知のクエリパラメータを無視するため副作用は無い。
+    // 注意: フラグメント(#gid=)より前に置くこと。後ろに置くと効かない。
     const url = 'https://docs.google.com/spreadsheets/d/'
-      + encodeURIComponent(sid) + '/edit#gid=' + encodeURIComponent(gid);
+      + encodeURIComponent(sid) + '/edit?ts=' + Date.now()
+      + '#gid=' + encodeURIComponent(gid);
     // 白カード＋緑アウトラインの中ボタン（主役は提出状況カード）。
     holder.innerHTML = `
       <div class="mgr-panel mgr-sheet-panel">
