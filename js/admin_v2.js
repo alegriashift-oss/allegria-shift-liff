@@ -998,7 +998,22 @@ async function initApp() {
 
   } catch (err) {
     console.error('[initApp] 起動エラー:', err);
-    showError('起動に失敗しました。\n\n' + err.message);
+    // IDトークンを自動で取り直している最中（err.recovering）は「失敗」ではないので、
+    // エラー画面を出さずローディング表示のままリダイレクトを待つ。
+    // ここでエラー画面を出すと「再試行する」ボタンが現れ、押されると location.reload() で
+    // 復旧が中断され、自動リトライ枠だけ消費した状態で打ち切りへ直行してしまう。
+    if (err.recovering) {
+      const sub = document.querySelector('#screen-loading .loading-sub');
+      if (sub) sub.textContent = err.message;
+      return;
+    }
+    // 店舗まわりの確定エラー（err.userFacing）は再起動しても直らないので、
+    // 前置きを付けずメッセージだけを見せる。
+    if (err.userFacing) {
+      showError(err.message);
+    } else {
+      showError('起動に失敗しました。\n\n' + err.message);
+    }
   }
 }
 

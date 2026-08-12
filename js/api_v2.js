@@ -75,25 +75,48 @@ const SupaAPI = {
    * sessionStorage のフラグで「1セッションにつき自動リトライは1回だけ」に制限する。
    * 取り直してもなお期限切れなら、リロードのたびに再ログインを繰り返す無限ループに
    * なるため（今回の不具合の本体）、そこで打ち切って手動対処を案内する。
-   * フラグは _establishSession() の成功時に消す。
+   * フラグは _establishSession() の成功時と、login() が既存セッションで
+   * 早期returnするとき（＝ログインできている全経路）に消す。
+   *
+   * 投げる Error には呼び出し元が表示を出し分けるための印を付ける:
+   *   err.recovering  = true … 復旧の途中（リダイレクト待ち）。エラー画面を出さない
+   *   err.userFacing  = true … 打ち切り。再試行では直らないのでメッセージだけ見せる
    */
   _forceRelogin() {
     if (sessionStorage.getItem('wolshif_relogin') === '1') {
-      throw new Error(
+      // 取り直してもなお期限切れ＝自動では直せない。再試行を促さずメッセージだけ見せる。
+      const err = new Error(
         'LINEの認証情報の有効期限が切れました。お手数ですが、LINEアプリを一度完全に終了してから、もう一度開いてください。'
       );
+      err.userFacing = true;
+      throw err;
     }
     sessionStorage.setItem('wolshif_relogin', '1');
     try { liff.logout(); } catch (e) {}
     liff.login({ redirectUri: location.href });
-    // 画面遷移が始まるまでの間に古いトークンで処理が進まないよう、ここで止める
-    throw new Error('LINEの認証情報を更新しています。この画面のままお待ちください…');
+    // 画面遷移が始まるまでの間に古いトークンで処理が進まないよう、ここで止める。
+    // これは「失敗」ではなく「復旧中」なので、エラー画面（＝再試行ボタン）を出させない。
+    // 再試行ボタンを押されると location.reload() でこのリダイレクトが中断され、
+    // 自動リトライ枠だけ消費した状態で打ち切りへ直行してしまう。
+    const err = new Error('LINEの認証情報を更新しています。この画面のままお待ちください…');
+    err.recovering = true;
+    throw err;
   },
 
   _getIdTokenOrThrow() {
     const idToken = liff.getIDToken();
     if (!idToken) {
       throw new Error('LINE認証情報を取得できませんでした。LINEアプリ内で開き直してください。');
+    }
+    // ★「たった今 _forceRelogin で取り直して戻ってきた直後」は事前チェックを飛ばす。
+    //   フラグが立ったまま＝まだ _establishSession に到達していない、が目印になる。
+    //   下の判定は端末の時計（Date.now()）に依存するので、時計が大きく進んでいる端末では
+    //   取り直した新品のトークンまで期限切れと誤判定し、自動リトライ枠を使い切って
+    //   打ち切りメッセージに直行する＝その人は二度とアプリに入れなくなる。
+    //   ここはサーバー(line-auth)の判断に委ね、本当に期限切れなら401を受けて
+    //   _isExpiredTokenResponse → _forceRelogin で拾う（打ち切りの経路は不変）。
+    if (sessionStorage.getItem('wolshif_relogin') === '1') {
+      return idToken;
     }
     // 期限切れ（や切れる直前）のトークンを投げても401になるだけなので、手前で取り直す。
     // exp が読めなかった場合(0)は判定不能としてそのまま送り、サーバー側の判断に委ねる。
@@ -146,6 +169,10 @@ const SupaAPI = {
       this.user = session.user;
 
       if (!storeKey) {
+        // ログインできている＝自動リトライ枠を次回のためにリセットする。
+        // ここで消さないと、フラグが立ったまま残った回のあとに本当の期限切れが来たとき、
+        // 1回も取り直さずに打ち切りメッセージへ直行してしまう。
+        sessionStorage.removeItem('wolshif_relogin');
         return { status: 'ok' };          // 従来どおり（挙動不変）
       }
 
@@ -159,6 +186,7 @@ const SupaAPI = {
       if (!error && Array.isArray(rows)) {
         const belongs = rows.some(r => r.stores && r.stores.store_key === storeKey);
         if (belongs) {
+          sessionStorage.removeItem('wolshif_relogin');  // ログインできている（上と同じ理由）
           return { status: 'ok' };        // その店の人。従来どおり
         }
         await this.db.auth.signOut();     // 未所属 → line-auth を通す
@@ -166,6 +194,7 @@ const SupaAPI = {
       } else {
         // ★判定不能なら従来どおり通す。ここで signOut すると、通信が不安定な
         //   だけでスタッフがログアウトさせられ、提出できない事故になる。
+        sessionStorage.removeItem('wolshif_relogin');  // セッションは有効（上と同じ理由）
         return { status: 'ok' };
       }
     }
