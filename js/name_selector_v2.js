@@ -123,6 +123,14 @@ const NameSelector = {
       await this.refresh();
 
     } catch (err) {
+      // IDトークンを自動で取り直している最中（err.recovering）は、すでに liff.login() が
+      // 走っていてリダイレクトが始まる。ここでアラートを出すと「登録に失敗しました。
+      // もう一度お試しください」という誤った案内が復旧中に被さるので、何も出さずに戻る。
+      // ボタンは「登録中…」の無効のままにして、リダイレクト前の再タップを防ぐ。
+      if (err.recovering) {
+        console.warn('[NameSelector] register: 認証情報を取り直しています:', err.message);
+        return;
+      }
       // 店舗まわりの確定エラー（err.userFacing）は再試行しても直らないので、
       // 「もう一度お試しください」を前置きせずメッセージだけを見せる。
       alert(err.userFacing ? err.message
