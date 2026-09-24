@@ -703,6 +703,53 @@ const ManagerHome = {
 };
 
 // ============================================================
+// 未紐付け画面: 店長用6桁番号で席を紐付ける
+// ============================================================
+
+// 失敗理由は出し分けない（番号の総当たりに手がかりを与えないため）。
+const CLAIM_FAILED_MESSAGE =
+  '番号が正しくないか、有効期限が切れています。運営にお問い合わせください。';
+
+let claimFormReady = false;
+
+function setupClaimForm() {
+  if (claimFormReady) return;
+  claimFormReady = true;
+
+  const input = document.getElementById('claim-code-input');
+  const btn   = document.getElementById('claim-submit-btn');
+  const msg   = document.getElementById('claim-message');
+  if (!input || !btn || !msg) return;
+
+  btn.addEventListener('click', async () => {
+    msg.hidden = true;
+    const code = input.value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      msg.textContent = CLAIM_FAILED_MESSAGE;
+      msg.hidden = false;
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const res = await SupaAPI.claimManagerSeat(code);
+      if (res && res.ok === true) {
+        location.reload();
+        return;
+      }
+      msg.textContent = CLAIM_FAILED_MESSAGE;
+      msg.hidden = false;
+    } catch (err) {
+      console.error('[claimManagerSeat] 失敗:', err);
+      msg.textContent = CLAIM_FAILED_MESSAGE;
+      msg.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
 // エントリーポイント（現行と同一）
 // ============================================================
 
@@ -721,7 +768,8 @@ async function initApp() {
     SupaAPI.init();
     const result = await SupaAPI.login();
     if (result.status === 'need_registration') {
-      // LINE未連携（プロフィール未作成）。第2段階でここにコード入力を差し込む。
+      // LINE未連携（プロフィール未作成）。店長は運営発行の6桁番号でここから紐付ける。
+      setupClaimForm();
       showScreen('unlinked');
       return;
     }
@@ -735,6 +783,7 @@ async function initApp() {
 
     if (!me.memberships.length) {
       // 連携済みだが、どの店舗のメンバーにも登録されていない
+      setupClaimForm();
       showScreen('unlinked');
       return;
     }

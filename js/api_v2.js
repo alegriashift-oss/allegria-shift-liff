@@ -949,5 +949,27 @@ const SupaAPI = {
   async reorderStoreMembers(orderedIds) {
     const res = await this.db.rpc('reorder_store_members', { ordered_ids: orderedIds });
     if (res.error) throw new Error('並び順の保存に失敗しました: ' + res.error.message);
+  },
+
+  /**
+   * 運営が発行した6桁番号で、店長の席（store_members の manager/admin 行）を自分に紐付ける。
+   * line-auth の claim_manager を通す（未連携＝セッション無しの状態から使えるように）。
+   * 成功時はセッション確立まで済ませる。
+   * @returns {Promise<{ok:boolean}>}
+   */
+  async claimManagerSeat(code) {
+    const payload = {
+      action : 'claim_manager',
+      idToken: this._getIdTokenOrThrow(),
+      code   : code
+    };
+    const { http, body } = await this._callLineAuth(payload);
+
+    if (body.status === 'ok') {
+      await this._establishSession(body);
+      return { ok: true };
+    }
+    if (this._isExpiredTokenResponse(http, body)) this._forceRelogin();
+    return { ok: false };
   }
 };

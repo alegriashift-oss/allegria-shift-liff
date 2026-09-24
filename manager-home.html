@@ -185,6 +185,23 @@
       flex-direction: column; align-items: center; justify-content: center;
       text-align: center; padding: 40px 24px;
     }
+
+    /* --- 未紐付け画面: 店長用6桁番号の入力 --- */
+    .claim-divider {
+      width: 100%; max-width: 280px; margin: 28px 0 20px;
+      color: var(--color-text-sub); font-size: 0.8rem;
+    }
+    .claim-code-input {
+      width: 100%; max-width: 280px; margin: 12px 0;
+      padding: 12px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-btn);
+      font-size: 1.4rem; letter-spacing: 0.4em; text-align: center; background: #fff;
+    }
+    .claim-code-input:focus { outline: 2px solid var(--color-primary); border-color: transparent; }
+    .claim-message {
+      width: 100%; max-width: 280px; margin-top: 12px; padding: 10px 12px;
+      background: var(--color-bg); color: var(--color-text); border-radius: 10px;
+      font-size: 0.85rem; line-height: 1.6;
+    }
   </style>
 </head>
 <body>
@@ -328,6 +345,18 @@
     <button class="btn-primary" style="max-width:280px" onclick="location.href='submit-v2.html'">
       名前を登録する
     </button>
+
+    <p class="claim-divider">── または ──</p>
+    <p class="info-text">
+      運営から伝えられた6桁の番号を<br>お持ちの場合はこちら
+    </p>
+    <input id="claim-code-input" class="claim-code-input" type="text"
+           inputmode="numeric" pattern="[0-9]*" maxlength="6"
+           autocomplete="one-time-code" aria-label="6桁の番号">
+    <button id="claim-submit-btn" class="btn-secondary" style="max-width:280px">
+      店長として登録
+    </button>
+    <p id="claim-message" class="claim-message" role="alert" hidden></p>
   </section>
 
   <!-- ===========================================================
