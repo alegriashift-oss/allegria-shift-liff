@@ -93,6 +93,7 @@ const DEFAULT_TEMPLATE =
 const RmdState = {
   userId     : null,
   managed    : [],    // 店長権限(admin/manager)を持つ所属
+  isOperator : false, // 運営者（operators）なら true。managed は全店舗になる
   storeId    : null,  // 表示中の店舗
   byStore    : {},    // storeId -> { isEnabled, schedules, period, preview, store, settings }
   loaded     : false,
@@ -1305,13 +1306,13 @@ async function initApp() {
       return;
     }
 
-    // 4. 自分の所属を読み込んで role で分岐
-    const me = await SupaAPI.getMe();
-    RmdState.userId  = me.profile.id;
-    RmdState.managed = me.memberships.filter(
-      m => m.role === 'admin' || m.role === 'manager');
+    // 4. 自分の所属を読み込んで role で分岐（運営者は全店舗が managed に入る）
+    const ctx = await SupaAPI.getManagerContext();
+    RmdState.userId     = ctx.profile.id;
+    RmdState.managed    = ctx.managed;
+    RmdState.isOperator = ctx.isOperator;
 
-    if (!me.memberships.length) {
+    if (!ctx.memberships.length && !ctx.isOperator) {
       showScreen('unlinked');
       return;
     }
@@ -1320,7 +1321,11 @@ async function initApp() {
       return;
     }
 
-    RmdState.storeId = RmdState.managed[0].store_id;
+    // ?store= の店が管理対象にあればその店から開く（無ければ従来どおり先頭）
+    const storeKey = SupaAPI.getStoreKey();
+    const initial  = RmdState.managed.find(m => storeKey && m.store_key === storeKey)
+      || RmdState.managed[0];
+    RmdState.storeId = initial.store_id;
 
     Reminder.bindEvents();
     await Reminder.loadAll();

@@ -15,7 +15,8 @@
 const AdminState = {
   userId     : null,
   displayName: null,
-  managed    : []   // 店長権限を持つ所属 [{store_id, store_name, role, ...}]
+  managed    : [],  // 店長権限を持つ所属 [{store_id, store_name, role, ...}]
+  isOperator : false // 運営者（operators）なら true。managed は全店舗になる
 };
 
 // ============================================================
@@ -976,11 +977,12 @@ async function initApp() {
       return;
     }
 
-    const me = await SupaAPI.getMe();
-    AdminState.userId      = me.profile.id;
-    AdminState.displayName = me.profile.display_name;
-    AdminState.managed     = me.memberships.filter(
-      m => m.role === 'admin' || m.role === 'manager');
+    // 運営者は全店舗が managed に入る
+    const ctx = await SupaAPI.getManagerContext();
+    AdminState.userId      = ctx.profile.id;
+    AdminState.displayName = ctx.profile.display_name;
+    AdminState.managed     = ctx.managed;
+    AdminState.isOperator  = ctx.isOperator;
 
     if (!AdminState.managed.length) {
       showError('このページは店長専用です。');
@@ -988,7 +990,8 @@ async function initApp() {
     }
 
     const nameEl = document.getElementById('admin-member-name');
-    if (nameEl) nameEl.textContent = AdminState.displayName || '';
+    if (nameEl) nameEl.textContent =
+      (AdminState.displayName || '') + (AdminState.isOperator ? '（運営）' : '');
 
     // アレグリア運用ではこのページはメンバー管理専用として使う。
     // 期間一覧→たたき台編集（AdminPeriods / DraftEditor）はシフトを

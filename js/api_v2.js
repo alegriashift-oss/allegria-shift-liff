@@ -189,6 +189,15 @@ const SupaAPI = {
           sessionStorage.removeItem('wolshif_relogin');  // ログインできている（上と同じ理由）
           return { status: 'ok' };        // その店の人。従来どおり
         }
+        // ★運営者（operators）は在籍行が無くても全店の店長メニューを使う。
+        //   ここで signOut すると line-auth を通し直すだけの無駄な往復になるので、
+        //   運営者と確定できたときだけ既存セッションのまま通す。
+        //   エラー・true 以外は「運営者ではない」に倒す＝従来どおり signOut する。
+        const op = await this.db.rpc('is_operator');
+        if (!op.error && op.data === true) {
+          sessionStorage.removeItem('wolshif_relogin');  // ログインできている（上と同じ理由）
+          return { status: 'ok' };
+        }
         await this.db.auth.signOut();     // 未所属 → line-auth を通す
         this.user = null;
       } else {
@@ -338,6 +347,50 @@ const SupaAPI = {
     });
 
     return { profile: profile, memberships: memberships };
+  },
+
+  /**
+   * 店長系ページ（manager-home / admin-v2 / reminder）専用の起動情報。
+   * 運営者（operators）なら全店舗を管理者として扱う。提出画面では使わない。
+   * ※ getMe() には運営者の店を混ぜない: 混ぜると運営者の提出画面に全店が出てしまう。
+   * @returns {Promise<{profile, memberships, managed, isOperator}>}
+   */
+  async getManagerContext() {
+    const me = await this.getMe();
+    let managed = me.memberships
+      .filter(m => m.role === 'admin' || m.role === 'manager')
+      .map(m => Object.assign({}, m));
+
+    // 判定に失敗したら「運営者ではない」に倒す＝従来どおりの店長判定だけになる
+    const op = await this.db.rpc('is_operator');
+    const isOperator = !op.error && op.data === true;
+
+    if (isOperator) {
+      const st = await this.db.from('stores')
+        .select('id, name, store_key, spreadsheet_id, sheet_gid, created_at')
+        .order('created_at', { ascending: true });
+      if (st.error) throw new Error('店舗情報の取得に失敗しました: ' + st.error.message);
+
+      const byStore = {};
+      managed.forEach(m => { byStore[m.store_id] = m; });
+      managed = (st.data || []).map(s => {
+        const own = byStore[s.id];
+        if (own) return Object.assign(own, { role: 'admin' });
+        return {
+          store_id      : s.id,
+          store_name    : s.name || '',
+          store_key     : s.store_key,
+          spreadsheet_id: s.spreadsheet_id,
+          sheet_gid     : s.sheet_gid,
+          role          : 'admin',
+          member_code   : null,
+          status        : 'active',
+          is_operator   : true
+        };
+      });
+    }
+
+    return { profile: me.profile, memberships: me.memberships, managed: managed, isOperator: isOperator };
   },
 
   /**

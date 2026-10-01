@@ -26,6 +26,7 @@ const MgrState = {
   userId     : null,
   displayName: null,
   managed    : [],    // 店長権限(admin/manager)を持つ所属 [{store_id, store_name, store_key, role, ...}]
+  isOperator : false, // 運営者（operators）なら true。managed は全店舗になる
   storeId    : null,  // 表示中の店舗
   periods    : [],    // 切替候補（表示順: 締切済み → 受付中）最大2件
   period     : null,  // 選択中の期間（periods の要素）または null
@@ -183,7 +184,8 @@ const ManagerHome = {
     const storeEl = document.getElementById('mgr-store-name');
     const userEl  = document.getElementById('mgr-user-name');
     if (storeEl) storeEl.textContent = store ? store.store_name : '';
-    if (userEl)  userEl.textContent  = MgrState.displayName || '';
+    if (userEl)  userEl.textContent  =
+      (MgrState.displayName || '') + (MgrState.isOperator ? '（運営）' : '');
   },
 
   /** 店舗切替カード（掛け持ち店長のときだけ表示・短縮名タブ） */
@@ -774,14 +776,14 @@ async function initApp() {
       return;
     }
 
-    // 4. 自分の所属を読み込んで role で分岐
-    const me = await SupaAPI.getMe();
-    MgrState.userId      = me.profile.id;
-    MgrState.displayName = me.profile.display_name;
-    MgrState.managed     = me.memberships.filter(
-      m => m.role === 'admin' || m.role === 'manager');
+    // 4. 自分の所属を読み込んで role で分岐（運営者は全店舗が managed に入る）
+    const ctx = await SupaAPI.getManagerContext();
+    MgrState.userId      = ctx.profile.id;
+    MgrState.displayName = ctx.profile.display_name;
+    MgrState.managed     = ctx.managed;
+    MgrState.isOperator  = ctx.isOperator;
 
-    if (!me.memberships.length) {
+    if (!ctx.memberships.length && !ctx.isOperator) {
       // 連携済みだが、どの店舗のメンバーにも登録されていない
       setupClaimForm();
       showScreen('unlinked');
@@ -793,7 +795,11 @@ async function initApp() {
       return;
     }
 
-    MgrState.storeId = MgrState.managed[0].store_id;
+    // ?store= の店が管理対象にあればその店から開く（無ければ従来どおり先頭）
+    const storeKey = SupaAPI.getStoreKey();
+    const initial  = MgrState.managed.find(m => storeKey && m.store_key === storeKey)
+      || MgrState.managed[0];
+    MgrState.storeId = initial.store_id;
     ManagerHome.showHome();
 
   } catch (err) {
